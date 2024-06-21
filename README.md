@@ -7,8 +7,9 @@
 1. Open HACS (Home Assistant Community Store).
 2. Navigate to Integrations.
 3. Click on the "![](/images/symbol-1.jpg)" button to add a new repository.
-4. Enter the URL of this GitHub repository.
-5. Select the "Integration" category and click "Add".
+4. Click "Custom repositories".
+5. Enter the URL of this GitHub repository.
+6. Select the "Integration" category and click "Add".
 
 ### Install manually
 
@@ -23,7 +24,7 @@ After connecting your ESP device to the network following the manual guide, you 
 3. Wait a moment, and the device will appear in Home Assistant.
 ![](/images/config-2.png)
 4. Click the device to view its details.
-![](/images/config-2.png)
+![](/images/interface-1.jpg)
 
 ## Devices supported
 - SPM01-D1EW
