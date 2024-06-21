@@ -6,7 +6,7 @@
 
 1. Open HACS (Home Assistant Community Store).
 2. Navigate to Integrations.
-3. Click on the "+" button to add a new repository.
+3. Click on the "![](/images/symbol-1.jpg)" button to add a new repository.
 4. Enter the URL of this GitHub repository.
 5. Select the "Integration" category and click "Add".
 
