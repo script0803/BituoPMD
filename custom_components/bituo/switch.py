@@ -25,10 +25,16 @@ async def async_setup_entry(hass, entry, async_add_entities):
         _LOGGER.error("Error initializing switch platform: %s", e)
         raise ConfigEntryNotReady from e
 
+    # Fetch device model and firmware version
+    try:
+        device_info = await coordinator.fetch_device_info()
+    except UpdateFailed:
+        _LOGGER.error("Failed to fetch device info for %s", host_ip)
+        device_info = {"model": "Unknown Model", "fw_version": "Unknown"}
+
     switches = []
-    if coordinator.data:
-        if "switchstatus" in coordinator.data:
-            switches.append(BituoSwitch(coordinator, host_ip))
+    if coordinator.data and "switchstatus" in coordinator.data:
+        switches.append(BituoSwitch(coordinator, host_ip, device_info))
 
     async_add_entities(switches, True)
 
@@ -43,28 +49,54 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Fetch data from the device."""
         try:
+            # Fetch data from /hadata
             response = await self.hass.async_add_executor_job(
                 requests.get, f"http://{self.host_ip}/hadata"
             )
-            return response.json()
+            data = response.json()
+
+            # Only fetch switch status if 'switchstatus' is in the data
+            if "switchstatus" in data:
+                status_response = await self.hass.async_add_executor_job(
+                    requests.get, f"http://{self.host_ip}/status"
+                )
+                status = status_response.text.strip().lower() == "true"
+                data["switchstatus"] = status
+
+            return data
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}")
+
+    async def fetch_device_info(self):
+        """Fetch device model and firmware version information."""
+        try:
+            response = await self.hass.async_add_executor_job(
+                requests.get, f"http://{self.host_ip}/data"
+            )
+            data = response.json()
+            return {
+                "model": data.get("productModel") or data.get("ProductModel", "Unknown Model"),
+                "fw_version": data.get("FWVersion") or data.get("fwVersion", "Unknown"),
+            }
+        except Exception as err:
+            raise UpdateFailed(f"Error fetching device info: {err}")
 
 class BituoSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of a Switch."""
 
-    def __init__(self, coordinator, host_ip):
+    def __init__(self, coordinator, host_ip, device_info):
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._host_ip = host_ip
-        self._attr_name = "Switch"
+        self._attr_name = f"{device_info['model']} - {host_ip}"
         self._attr_unique_id = f"{host_ip}_switch"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, host_ip)},
-            name=f"Bituo Device - {host_ip}",
-            manufacturer="Your Manufacturer",
-            model=coordinator.data.get("productModel", "Unknown"),
+            name=f"{device_info['model']} - {host_ip}",
+            manufacturer="BituoTechnik",
+            model=device_info['model'],
+            sw_version=device_info['fw_version'],
         )
+        self._host_ip = host_ip
 
     @property
     def is_on(self):
