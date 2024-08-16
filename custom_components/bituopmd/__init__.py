@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import requests
 from homeassistant.config_entries import ConfigEntry
@@ -6,18 +5,19 @@ from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
 from .const import DOMAIN, CONF_HOST_IP
+from .frontend import setup_frontend
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.BUTTON, Platform.SWITCH]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Bituo integration from a config entry."""
+    """Set up BituoPMD integration from a config entry."""
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
 
     host_ip = entry.data[CONF_HOST_IP]
-    _LOGGER.info("Setting up Bituo integration for %s", host_ip)
+    _LOGGER.info("Setting up BituoPMD integration for %s", host_ip)
 
     # Initialize the data dictionary for this entry
     hass.data[DOMAIN][entry.entry_id] = {}
@@ -43,18 +43,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except ConfigEntryNotReady as e:
-        _LOGGER.error("Error setting up platforms for Bituo: %s", e)
+        _LOGGER.error("Error setting up platforms for BituoPMD: %s", e)
         raise ConfigEntryNotReady from e
+
+    # Set up the frontend
+    await setup_frontend(hass)
 
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a Bituo config entry."""
-    _LOGGER.info("Unloading Bituo integration for %s", entry.data[CONF_HOST_IP])
+    """Unload a BituoPMD config entry."""
+    _LOGGER.info("Unloading BituoPMD integration for %s", entry.data[CONF_HOST_IP])
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        _LOGGER.info("Successfully unloaded Bituo integration for %s", entry.data[CONF_HOST_IP])
+        _LOGGER.info("Successfully unloaded BituoPMD integration for %s", entry.data[CONF_HOST_IP])
         if DOMAIN in hass.data:
             hass.data[DOMAIN].pop(entry.entry_id, None)
 
@@ -62,6 +65,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle removal of an entry."""
-    _LOGGER.info("Removing Bituo integration for %s", entry.data[CONF_HOST_IP])
-
-# by Script0803
+    _LOGGER.info("Removing BituoPMD integration for %s", entry.data[CONF_HOST_IP])
+    if DOMAIN in hass.data:
+        hass.data[DOMAIN].pop(entry.entry_id, None)

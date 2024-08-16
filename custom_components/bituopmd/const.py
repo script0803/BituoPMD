@@ -1,4 +1,4 @@
 """Constants for the Bituo integration."""
-DOMAIN = "bituo"
+DOMAIN = "bituopmd"
 CONF_HOST_IP = "host_ip"
 

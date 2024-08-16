@@ -13,7 +13,7 @@ from .const import DOMAIN, CONF_HOST_IP
 
 _LOGGER = logging.getLogger(__name__)
 
-SCAN_INTERVAL = timedelta(seconds=5)
+SCAN_INTERVAL = timedelta(seconds=2)
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up switch platform."""

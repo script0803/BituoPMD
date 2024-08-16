@@ -1,0 +1,16 @@
+{
+    "config": {
+      "step": {
+        "user":{},
+        "zeroconf_confirm": {
+          "description": "Are you sure you want to set up device?"
+        },
+        "zeroconf_discovery_selected":{},
+        "zeroconf_discovery":{},
+        "manual":{}
+      }
+    }
+  }
+  
+       
+    
