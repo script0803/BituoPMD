@@ -151,6 +151,38 @@ class BituoPanel extends HTMLElement {
                             background-color: #0056b3;
                         }
                     }
+                    .confirmation-dialog {
+                        position: fixed;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        padding: 20px;
+                        background-color: #fff;
+                        border: 1px solid #ccc;
+                        border-radius: 5px;
+                        z-index: 1000;
+                        max-width: 80%;
+                        max-height: 80%;
+                        overflow: auto;
+                        box-sizing: border-box;
+                    }
+
+                    .confirmation-content {
+                        text-align: left;
+                    }
+
+                    .confirmation-dialog p {
+                        margin-bottom: 20px;
+                        word-wrap: break-word;
+                        overflow-wrap: break-word;
+                        white-space: normal;
+                    }
+
+                    .confirmation-dialog button {
+                        padding: 10px 20px;
+                        margin: 5px;
+                        cursor: pointer;
+                    }
                 </style>
                 <div>
                     <h1>${title}</h1>
@@ -189,6 +221,15 @@ class BituoPanel extends HTMLElement {
                 <div class="ota-overlay" id="ota-overlay">
                     OTA in progress, please wait...
                 </div>
+                <div id="confirmation-dialog" class="confirmation-dialog" style="display: none;">
+                    <div class="confirmation-content">
+                        <p id="confirmation-message"></p>
+                        <div style="text-align: center;">
+                            <button id="confirm-yes">Yes</button>
+                            <button id="confirm-no">No</button>
+                        </div>
+                    </div>
+                </div>
             `;
             this.content = this.querySelector('div');
 
@@ -204,11 +245,15 @@ class BituoPanel extends HTMLElement {
             { id: '#zero-energy', action: 'zeroenergy' },
             { id: '#ota', action: 'ota' }
         ];
-
+    
         actions.forEach(({ id, action }) => {
             const element = this.querySelector(id);
             if (element) {
-                element.addEventListener('click', () => this.performGetAction(action));
+                element.addEventListener('click', () => {
+                    this.showConfirmationDialog('Are you sure you want to perform this action?', () => {
+                        this.performGetAction(action);
+                    });
+                });
             }
         });
 
@@ -229,7 +274,15 @@ class BituoPanel extends HTMLElement {
         postActions.forEach(({ id, getConfig }) => {
             const element = this.querySelector(id);
             if (element) {
-                element.addEventListener('click', () => this.performPostAction('save-config', getConfig.call(this)));
+                if (id === '#restart' || id === '#erase-factory') {
+                    element.addEventListener('click', () => {
+                        this.showConfirmationDialog('Are you sure you want to perform this action?', () => {
+                            this.performPostAction('save-config', getConfig.call(this));
+                        });
+                    });
+                } else {
+                    element.addEventListener('click', () => this.performPostAction('save-config', getConfig.call(this)));
+                }
             }
         });
 
@@ -237,6 +290,25 @@ class BituoPanel extends HTMLElement {
         if (setFrequencyButton) {
             setFrequencyButton.addEventListener('click', () => this.setDataRequestFrequency());
         }
+    }
+
+    showConfirmationDialog(message, onConfirm) {
+        const dialog = this.querySelector('#confirmation-dialog');
+        const messageElement = this.querySelector('#confirmation-message');
+        const yesButton = this.querySelector('#confirm-yes');
+        const noButton = this.querySelector('#confirm-no');
+    
+        messageElement.textContent = message;
+        dialog.style.display = 'block';
+    
+        yesButton.onclick = () => {
+            dialog.style.display = 'none';
+            onConfirm();
+        };
+    
+        noButton.onclick = () => {
+            dialog.style.display = 'none';
+        };
     }
 
     async setDataRequestFrequency() {
