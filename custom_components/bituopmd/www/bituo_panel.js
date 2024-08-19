@@ -66,6 +66,15 @@ class BituoPanel extends HTMLElement {
                         background-color: #fff; /* 白色背景 */
                         color: #000; /* 黑色文字 */
                     }
+                    .panel .checkbox-container {
+                        display: flex;
+                        align-items: center;
+                    }
+
+                    .panel .checkbox-container label {
+                        margin-right: 10px; 
+                        margin-bottom: 0; 
+                    }
                     .panel button {
                         padding: 10px 20px;
                         background-color: #007bff;
@@ -290,6 +299,11 @@ class BituoPanel extends HTMLElement {
         if (setFrequencyButton) {
             setFrequencyButton.addEventListener('click', () => this.setDataRequestFrequency());
         }
+
+        const uploadCaButton = this.querySelector('#upload-ca-cert');
+        if (uploadCaButton) {
+            uploadCaButton.addEventListener('click', () => this.uploadCaCertificate());
+        }
     }
 
     showConfirmationDialog(message, onConfirm) {
@@ -429,9 +443,14 @@ class BituoPanel extends HTMLElement {
                 <input id="mqtt-username" type="text" /><br />
                 <label for="mqtt-password">Password:</label>
                 <input id="mqtt-password" type="password" /><br />
-                <label for="mqtt-cert">MQTT Certificate:</label>
-                <input id="mqtt-cert" type="file" accept=".crt,.pem,.key"/><br />
+                <div style="display: flex; align-items: center;">
+                    <label for="mqtt-ssltls" style="margin-right: 10px;">Use SSL/TLS:</label>
+                    <input id="mqtt-ssltls" type="checkbox"/>
+                </div><br />
                 <button id="mqtt-config">Configure MQTT</button>
+                <h3>Upload CA Certificate</h3>
+                <input id="mqtt-cert" type="file" accept=".crt,.pem,.key"/><br />
+                <button id="upload-ca-cert">Upload CA Certificate</button>
             </div>
             <div class="panel">
                 <h3>Modbus Configuration</h3>
@@ -550,22 +569,45 @@ class BituoPanel extends HTMLElement {
     }
 
     getMQTTConfig() {
-        const certFile = this.querySelector('#mqtt-cert').files[0];
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const certContent = e.target.result;
-            this.performPostAction('save-config', {
-                configType: 'mqtt',
-                ssltls: 'true',
-                host: this.querySelector('#mqtt-host').value,
-                port: this.querySelector('#mqtt-port').value,
-                clientid: this.querySelector('#mqtt-clientid').value,
-                username: this.querySelector('#mqtt-username').value,
-                password: this.querySelector('#mqtt-password').value,
-                certificate: certContent,
-            });
+        return {
+            configType: 'mqtt',
+            ssltls: this.querySelector('#mqtt-ssltls').checked ? 'true' : 'false',
+            host: this.querySelector('#mqtt-host').value,
+            port: this.querySelector('#mqtt-port').value,
+            clientid: this.querySelector('#mqtt-clientid').value,
+            username: this.querySelector('#mqtt-username').value,
+            password: this.querySelector('#mqtt-password').value,
         };
-        reader.readAsText(certFile);
+    }
+
+    async uploadCaCertificate() {
+        const certFile = this.querySelector('#mqtt-cert').files[0];
+        const { deviceIp } = this.getSelectedDevice();
+        if (!certFile || !deviceIp) {
+            this.showAlert('No device selected or no file chosen.');
+            return;
+        }
+    
+        const formData = new FormData();
+        formData.append('file', certFile);
+    
+        try {
+            const response = await fetch(`http://${deviceIp}/upload`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+    
+            if (response.ok) {
+                this.showAlert('CA certificate uploaded successfully.');
+            } else {
+                this.showAlert('Failed to upload CA certificate.');
+            }
+        } catch (error) {
+            this.showAlert(`Error uploading CA certificate: ${error.message}`);
+        }
     }
 
     getBaudRateConfig() {
