@@ -10,6 +10,7 @@ class BituoPanel extends HTMLElement {
             const title = this.config ? this.config.title : "BituoPMD";
             this.innerHTML = `
                 <style>
+                    /* 默认样式，适用于白色模式 */
                     .container {
                         display: flex;
                         flex-wrap: wrap;
@@ -24,6 +25,7 @@ class BituoPanel extends HTMLElement {
                         background-color: #f9f9f9;
                         border: 1px solid #ddd;
                         border-radius: 5px;
+                        color: #000; /* 黑色文字 */
                     }
                     .device-selection {
                         flex: 1;
@@ -35,20 +37,25 @@ class BituoPanel extends HTMLElement {
                         margin-left: 5px;
                         margin-right: 5px;
                         margin-bottom: 5px;
+                        color: #000; /* 黑色文字 */
                     }
                     .device-selection select {
                         width: calc(30%);
                         padding: 5px;
                         border: 1px solid #ccc;
                         border-radius: 3px;
+                        background-color: #fff; /* 白色背景 */
+                        color: #000; /* 黑色文字 */
                     }
                     .panel h3 {
                         margin-top: 0;
+                        color: #000; /* 黑色文字 */
                     }
                     .panel label {
                         display: block;
                         margin-bottom: 5px;
                         font-weight: bold;
+                        color: #333; /* 深色文字 */
                     }
                     .panel input, .panel select {
                         width: calc(100% - 10px);
@@ -56,6 +63,8 @@ class BituoPanel extends HTMLElement {
                         margin-bottom: 10px;
                         border: 1px solid #ccc;
                         border-radius: 3px;
+                        background-color: #fff; /* 白色背景 */
+                        color: #000; /* 黑色文字 */
                     }
                     .panel button {
                         padding: 10px 20px;
@@ -86,9 +95,11 @@ class BituoPanel extends HTMLElement {
                     }
                     h1 {
                         margin-left: 20px;
+                        color: #000; /* 黑色文字 */
                     }
                     .mqtt-report-frequency-label {
                         margin-top: 20px;
+                        color: #333; /* 深色文字 */
                     }
                     /* 遮罩层样式 */
                     .ota-overlay {
@@ -105,6 +116,40 @@ class BituoPanel extends HTMLElement {
                         font-size: 24px;
                         z-index: 1000;
                         display: none; /* 初始状态隐藏 */
+                    }
+
+                    /* 黑色模式 */
+                    @media (prefers-color-scheme: dark) {
+                        .panel {
+                            background-color: #333; /* 深色背景 */
+                            border: 1px solid #444;
+                            color: #fff; /* 白色文字 */
+                        }
+                        .device-selection {
+                            background-color: #333; /* 深色背景 */
+                            border: 1px solid #444;
+                            color: #fff; /* 白色文字 */
+                        }
+                        .device-selection select {
+                            background-color: #444; /* 深色背景 */
+                            border: 1px solid #555;
+                            color: #fff; /* 白色文字 */
+                        }
+                        .panel h3, .panel label, .mqtt-report-frequency-label, h1 {
+                            color: #fff; /* 白色文字 */
+                        }
+                        .panel input, .panel select {
+                            background-color: #444; /* 深色背景 */
+                            border: 1px solid #555;
+                            color: #fff; /* 白色文字 */
+                        }
+                        .panel button {
+                            background-color: #007bff;
+                            color: #fff;
+                        }
+                        .panel button:hover {
+                            background-color: #0056b3;
+                        }
                     }
                 </style>
                 <div>
@@ -363,6 +408,7 @@ class BituoPanel extends HTMLElement {
             </div>
         `;
     }
+    
 
     async performGetAction(action) {
         const { deviceIp } = this.getSelectedDevice();
@@ -524,6 +570,8 @@ class BituoPanel extends HTMLElement {
         const overlay = this.querySelector('#ota-overlay');
         if (overlay) {
             overlay.style.display = 'flex';
+        } else {
+            console.error('OTA overlay element not found.');
         }
     }
 
