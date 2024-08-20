@@ -70,14 +70,16 @@ All entities can have their units adjusted according to Home Assistant's rules.
 
 Once the integration is activated, you can see the entry to the settings page in Home Assistant's sidebar.
 ![](/images/UI-1.jpg)
+
 On this page, you can adjust all the settings of the device, as well as access other functions like Zero Energy, Restart, Erase Factory, and OTA.
 ![](/images/UI-2.jpg)
 Click the dropdown menu at the top to select the device you want to configure.
-![](/images/UI-3.jpg)
+![](/images/UI-3.png)
 
 ## Device OTA
 The device's parameter page will display the OTA status. When 'OTA available' is shown, please proceed to the embedded web page or the integration's settings page to perform the OTA.
 ![](/images/OTA-2.jpg)
+
 ![](/images/OTA-3.jpg)
 If 'Up to date' is displayed, it means the device is already on the latest version and no OTA is required.
 ![](/images/OTA-1.jpg)
