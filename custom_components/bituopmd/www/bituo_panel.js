@@ -228,7 +228,7 @@ class BituoPanel extends HTMLElement {
                     </div>
                 </div>
                 <div class="ota-overlay" id="ota-overlay">
-                    OTA in progress, please wait...
+                    In progress, please wait...
                 </div>
                 <div id="confirmation-dialog" class="confirmation-dialog" style="display: none;">
                     <div class="confirmation-content">
@@ -254,18 +254,20 @@ class BituoPanel extends HTMLElement {
             { id: '#zero-energy', action: 'zeroenergy' },
             { id: '#ota', action: 'ota' }
         ];
-    
+        
         actions.forEach(({ id, action }) => {
             const element = this.querySelector(id);
             if (element) {
-                element.addEventListener('click', () => {
-                    this.showConfirmationDialog('Are you sure you want to perform this action?', () => {
-                        this.performGetAction(action);
+                element.addEventListener('click', async () => {
+                    this.showOtaOverlay();
+                    this.showConfirmationDialog('Are you sure you want to perform this action?', async () => {
+                        await this.performGetAction(action);
+                        this.hideOtaOverlay();
                     });
                 });
             }
         });
-
+    
         const postActions = [
             { id: '#wifi-config', getConfig: this.getWiFiConfig },
             { id: '#mqtt-config', getConfig: this.getMQTTConfig },
@@ -279,30 +281,36 @@ class BituoPanel extends HTMLElement {
             { id: '#set-topic', getConfig: this.getTopicConfig },
             { id: '#set-udp', getConfig: this.getUdpConfig }
         ];
-
+    
         postActions.forEach(({ id, getConfig }) => {
             const element = this.querySelector(id);
             if (element) {
-                if (id === '#restart' || id === '#erase-factory') {
-                    element.addEventListener('click', () => {
-                        this.showConfirmationDialog('Are you sure you want to perform this action?', () => {
-                            this.performPostAction('save-config', getConfig.call(this));
-                        });
+                element.addEventListener('click', async () => {
+                    this.showOtaOverlay();
+                    this.showConfirmationDialog('Are you sure you want to perform this action?', async () => {
+                        await this.performPostAction('save-config', getConfig.call(this));
+                        this.hideOtaOverlay();
                     });
-                } else {
-                    element.addEventListener('click', () => this.performPostAction('save-config', getConfig.call(this)));
-                }
+                });
             }
         });
-
+    
         const setFrequencyButton = this.querySelector('#set-data-frequency');
         if (setFrequencyButton) {
-            setFrequencyButton.addEventListener('click', () => this.setDataRequestFrequency());
+            setFrequencyButton.addEventListener('click', async () => {
+                this.showOtaOverlay();
+                await this.setDataRequestFrequency();
+                this.hideOtaOverlay();
+            });
         }
-
+    
         const uploadCaButton = this.querySelector('#upload-ca-cert');
         if (uploadCaButton) {
-            uploadCaButton.addEventListener('click', () => this.uploadCaCertificate());
+            uploadCaButton.addEventListener('click', async () => {
+                this.showOtaOverlay();
+                await this.uploadCaCertificate();
+                this.hideOtaOverlay();
+            });
         }
     }
 
@@ -322,6 +330,7 @@ class BituoPanel extends HTMLElement {
     
         noButton.onclick = () => {
             dialog.style.display = 'none';
+            this.hideOtaOverlay();
         };
     }
 
@@ -448,8 +457,8 @@ class BituoPanel extends HTMLElement {
                     <input id="mqtt-ssltls" type="checkbox"/>
                 </div><br />
                 <button id="mqtt-config">Configure MQTT</button>
-                <h3>Upload CA Certificate</h3>
-                <input id="mqtt-cert" type="file" accept=".crt,.pem,.key"/><br />
+                <label for="mqtt-ca-cert">CA Certificate:</label>
+                <textarea id="mqtt-ca-cert" rows="10" style="width:100%;"></textarea><br />
                 <button id="upload-ca-cert">Upload CA Certificate</button>
             </div>
             <div class="panel">
@@ -505,48 +514,58 @@ class BituoPanel extends HTMLElement {
         const { deviceIp } = this.getSelectedDevice();
         if (!deviceIp) {
             this.showAlert('No device selected.');
+            this.hideOtaOverlay(); // 如果没有设备被选择，也要隐藏覆盖页面
             return;
         }
-        if (action === 'ota') {
-            // 开始OTA，显示遮罩层并停止设备列表刷新
-            this.showOtaOverlay();
-            this.stopRefreshingDevices();
-
-            try {
-                const response = await this._hass.callApi('GET', `bituopmd/proxy/${deviceIp}/${action}`);
-                if (response.status === 200) {
-                    this.showAlert(`Response: ${JSON.stringify(response)}`);
-                } else {
-                    this.showAlert(`Response: ${JSON.stringify(response)}`);
-                }
-            } catch (error) {
-                this.showAlert(`An error occurred during OTA update: ${error.message}`);
-            } finally {
-                this.hideOtaOverlay();
-                this.startRefreshingDevices();
-            }
-        } else {
-            try {
-                const response = await this._hass.callApi('GET', `bituopmd/proxy/${deviceIp}/${action}`);
-                this.showAlert(`Response: ${JSON.stringify(response)}`);
-            } catch (error) {
-                this.showAlert(`Error: ${error.message}`);
-            }
+    
+        try {
+            const response = await this._hass.callApi('GET', `bituopmd/proxy/${deviceIp}/${action}`);
+            this.showAlert(`Response: ${JSON.stringify(response)}`);
+        } catch (error) {
+            this.showAlert(`Error: ${error.message}`);
+        } finally {
+            this.hideOtaOverlay(); // 在最后无论成功还是失败，都要隐藏覆盖页面
         }
     }
 
     async performPostAction(action, body) {
         const { deviceIp } = this.getSelectedDevice();
-        if (!deviceIp) {
-            this.showAlert('No device selected.');
+
+        if (!this.validateInputs(body)) {
+            this.showAlert('One or more fields are invalid or empty.');
+            this.hideOtaOverlay();
             return;
         }
+
+        if (!deviceIp) {
+            this.showAlert('No device selected.');
+            this.hideOtaOverlay(); // 如果没有设备被选择，也要隐藏覆盖页面
+            return;
+        }
+    
         try {
             const response = await this._hass.callApi('POST', `bituopmd/proxy/${deviceIp}/${action}`, body);
             this.showAlert(`Response: ${JSON.stringify(response)}`);
         } catch (error) {
             this.showAlert(`Error: ${error.message}`);
+        } finally {
+            this.hideOtaOverlay(); // 在最后无论成功还是失败，都要隐藏覆盖页面
         }
+    }
+
+    validateInputs(body) {
+        // 排除不需要验证的字段
+        const fieldsToExclude = ['password'];
+    
+        // 遍历对象的所有字段，检查是否有为空的情况
+        for (const key in body) {
+            if (fieldsToExclude.includes(key) && body.configType === 'wifi') continue;  // 排除 WiFi 密码的验证
+            if (!body[key] || (typeof body[key] === 'string' && body[key].trim() === '')) {
+                return false;  // 如果字段为空或只有空格，则返回 false
+            }
+        }
+    
+        return true;  // 所有字段都有效
     }
 
     getSelectedDevice() {
@@ -563,90 +582,97 @@ class BituoPanel extends HTMLElement {
     getWiFiConfig() {
         return {
             configType: 'wifi',
-            username: this.querySelector('#wifi-ssid').value,
-            password: this.querySelector('#wifi-password').value,
+            username: this.querySelector('#wifi-ssid').value.trim(),
+            password: this.querySelector('#wifi-password').value,  // 密码可以为空
         };
     }
-
+    
     getMQTTConfig() {
         return {
             configType: 'mqtt',
             ssltls: this.querySelector('#mqtt-ssltls').checked ? 'true' : 'false',
-            host: this.querySelector('#mqtt-host').value,
-            port: this.querySelector('#mqtt-port').value,
-            clientid: this.querySelector('#mqtt-clientid').value,
-            username: this.querySelector('#mqtt-username').value,
-            password: this.querySelector('#mqtt-password').value,
+            host: this.querySelector('#mqtt-host').value.trim(),
+            port: this.querySelector('#mqtt-port').value.trim(),
+            clientid: this.querySelector('#mqtt-clientid').value.trim(),
+            username: this.querySelector('#mqtt-username').value.trim(),
+            password: this.querySelector('#mqtt-password').value.trim(),  // 密码不能为空
         };
     }
 
+    
+
     async uploadCaCertificate() {
-        const certFile = this.querySelector('#mqtt-cert').files[0];
+        const caCert = this.querySelector('#mqtt-ca-cert').value.trim();
         const { deviceIp } = this.getSelectedDevice();
-        if (!certFile || !deviceIp) {
-            this.showAlert('No device selected or no file chosen.');
+    
+        if (!caCert) {
+            this.showAlert('CA Certificate cannot be empty.');
             return;
         }
     
-        const formData = new FormData();
-        formData.append('file', certFile);
+        if (!deviceIp) {
+            this.showAlert('No device selected.');
+            return;
+        }
+    
+        const body = {
+            ca_cert: caCert,
+        };
     
         try {
-            const response = await fetch(`http://${deviceIp}/upload`, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'Content-Type': 'multipart/form-data'
+            const response = await this._hass.callApi(
+                'POST',
+                `bituopmd/proxy/${deviceIp}/uploadcefile`,
+                caCert,
+                {
+                    headers: {
+                        'Content-Type': 'text/plain',
+                    }
                 }
-            });
-    
-            if (response.ok) {
-                this.showAlert('CA certificate uploaded successfully.');
-            } else {
-                this.showAlert('Failed to upload CA certificate.');
-            }
+            );
+            this.showAlert(`Response: ${JSON.stringify(response)}`);
         } catch (error) {
-            this.showAlert(`Error uploading CA certificate: ${error.message}`);
+            this.showAlert(`Error: ${error.message}`);
         }
     }
 
     getBaudRateConfig() {
         return {
             configType: 'baudrate',
-            baudrate: this.querySelector('#baudrate').value
+            baudrate: this.querySelector('#baudrate').value.trim()
         };
     }
-
+    
     getParityStopConfig() {
         return {
             configType: 'ParityStop',
-            ParityStop: this.querySelector('#parity-stop').value
+            ParityStop: this.querySelector('#parity-stop').value.trim()
         };
     }
-
+    
     getModbusAddressConfig() {
         return {
             configType: 'Modbusaddress',
-            Modbusaddress: this.querySelector('#modbus-address').value
+            Modbusaddress: this.querySelector('#modbus-address').value.trim()
         };
     }
-
+    
     getTopicConfig() {
         return {
             configType: 'topic',
-            topic_post: this.querySelector('#topic-post').value,
-            topic_set: this.querySelector('#topic-set').value,
-            topic_response: this.querySelector('#topic-response').value,
-            topic_metadata: this.querySelector('#topic-metadata').value
+            topic_post: this.querySelector('#topic-post').value.trim(),
+            topic_set: this.querySelector('#topic-set').value.trim(),
+            topic_response: this.querySelector('#topic-response').value.trim(),
+            topic_metadata: this.querySelector('#topic-metadata').value.trim()
         };
     }
-
+    
     getUdpConfig() {
         return {
             configType: 'udp',
-            IpAddress: this.querySelector('#udp-ip').value,
-            localUdpPort: this.querySelector('#udp-port').value,
-            Frequency: this.querySelector('#udp-frequency').value
+            IpAddress: this.querySelector('#udp-ip').value.trim(),
+            localUdpPort: this.querySelector('#udp-port').value.trim(),
+            Frequency: this.querySelector('#udp-frequency').value.trim()
         };
     }
 
