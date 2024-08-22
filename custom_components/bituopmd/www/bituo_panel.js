@@ -127,6 +127,38 @@ class BituoPanel extends HTMLElement {
                         display: none; /* 初始状态隐藏 */
                     }
 
+                    .confirmation-dialog {
+                        position: fixed;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        padding: 20px;
+                        background-color: #fff;
+                        border: 1px solid #ccc;
+                        border-radius: 5px;
+                        z-index: 1000;
+                        max-width: 80%;
+                        max-height: 80%;
+                        overflow: auto;
+                        box-sizing: border-box;
+                    }
+
+                    .confirmation-content {
+                        text-align: left;
+                    }
+
+                    .confirmation-dialog p {
+                        margin-bottom: 20px;
+                        word-wrap: break-word;
+                        overflow-wrap: break-word;
+                        white-space: normal;
+                    }
+
+                    .confirmation-dialog button {
+                        padding: 10px 20px;
+                        margin: 5px;
+                        cursor: pointer;
+                    }
                     /* 黑色模式 */
                     @media (prefers-color-scheme: dark) {
                         .panel {
@@ -159,38 +191,25 @@ class BituoPanel extends HTMLElement {
                         .panel button:hover {
                             background-color: #0056b3;
                         }
-                    }
-                    .confirmation-dialog {
-                        position: fixed;
-                        top: 50%;
-                        left: 50%;
-                        transform: translate(-50%, -50%);
-                        padding: 20px;
-                        background-color: #fff;
-                        border: 1px solid #ccc;
-                        border-radius: 5px;
-                        z-index: 1000;
-                        max-width: 80%;
-                        max-height: 80%;
-                        overflow: auto;
-                        box-sizing: border-box;
-                    }
+                        .confirmation-dialog {
+                            background-color: #444 !important; /* 强制应用深色背景 */
+                            border: 1px solid #555 !important; /* 强制应用深色边框 */
+                            color: #fff !important; /* 强制应用白色文字 */
+                        }
 
-                    .confirmation-content {
-                        text-align: left;
-                    }
+                        .confirmation-dialog p {
+                            color: #fff !important; /* 强制应用白色文字 */
+                        }
 
-                    .confirmation-dialog p {
-                        margin-bottom: 20px;
-                        word-wrap: break-word;
-                        overflow-wrap: break-word;
-                        white-space: normal;
-                    }
+                        .confirmation-dialog button {
+                            background-color: #007bff !important; /* 强制应用按钮背景颜色 */
+                            color: #fff !important; /* 强制应用按钮文字颜色 */
+                            border: none !important; /* 确保没有其他边框干扰 */
+                        }
 
-                    .confirmation-dialog button {
-                        padding: 10px 20px;
-                        margin: 5px;
-                        cursor: pointer;
+                        .confirmation-dialog button:hover {
+                            background-color: #0056b3 !important; /* 按钮悬停时的颜色 */
+                        }
                     }
                 </style>
                 <div>
@@ -678,31 +697,55 @@ class BituoPanel extends HTMLElement {
 
     showAlert(message) {
         const alertBox = document.createElement('div');
+    
+        // 检查是否为黑色模式
+        const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+        // 基本样式
         alertBox.style.position = 'fixed';
         alertBox.style.top = '50%';
         alertBox.style.left = '50%';
         alertBox.style.transform = 'translate(-50%, -50%)';
         alertBox.style.padding = '20px';
-        alertBox.style.backgroundColor = '#fff';
-        alertBox.style.border = '1px solid #ccc';
         alertBox.style.borderRadius = '5px';
         alertBox.style.zIndex = '1000';
-        alertBox.style.maxWidth = '80%'; // 限制消息框最大宽度
-        alertBox.style.maxHeight = '80%'; // 限制消息框最大高度
-        alertBox.style.overflow = 'auto'; // 使内容在必要时滚动
-        alertBox.style.wordWrap = 'break-word'; // 自动换行
-        alertBox.style.overflowWrap = 'break-word'; // 自动换行
-        alertBox.style.whiteSpace = 'normal'; // 允许文本正常换行
-        alertBox.style.boxSizing = 'border-box'; // 确保padding在内
+        alertBox.style.maxWidth = '80%';
+        alertBox.style.maxHeight = '80%';
+        alertBox.style.overflow = 'auto';
+        alertBox.style.wordWrap = 'break-word';
+        alertBox.style.overflowWrap = 'break-word';
+        alertBox.style.whiteSpace = 'normal';
+        alertBox.style.boxSizing = 'border-box';
+    
+        // 根据模式设置样式
+        if (isDarkMode) {
+            alertBox.style.backgroundColor = '#444'; // 深色背景
+            alertBox.style.border = '1px solid #555'; // 深色边框
+            alertBox.style.color = '#fff'; // 白色文字
+        } else {
+            alertBox.style.backgroundColor = '#fff'; // 白色背景
+            alertBox.style.border = '1px solid #ccc'; // 浅色边框
+            alertBox.style.color = '#000'; // 黑色文字
+        }
+    
         alertBox.innerHTML = `
             <p style="margin-bottom: 20px; text-align: left;">${message}</p>
-            <div style="text-align: center;"> <!-- 居中容器 -->
-                <button style="padding: 10px 20px; cursor: pointer;">OK</button>
+            <div style="text-align: center;">
+                <button style="
+                    padding: 10px 20px; 
+                    cursor: pointer;
+                    background-color: #007bff; /* 蓝色背景 */
+                    color: #fff; /* 白色文字 */
+                    border: none;
+                    border-radius: 3px;
+                ">OK</button>
             </div>
         `;
+    
         alertBox.querySelector('button').addEventListener('click', () => {
             alertBox.remove();
         });
+    
         document.body.appendChild(alertBox);
     }
 
