@@ -563,12 +563,24 @@ class BituoPanel extends HTMLElement {
         }
     
         try {
-            const response = await this._hass.callApi('POST', `bituopmd/proxy/${deviceIp}/${action}`, body);
-            this.showAlert(`Response: ${JSON.stringify(response)}`);
+            if (body.configType === 'wifi') {
+                this.showOtaOverlay();
+                this._hass.callApi('POST', `bituopmd/proxy/${deviceIp}/${action}`, body);
+                setTimeout(() => {
+                    this.showAlert('WiFi information sent successfully. The device may now be disconnected.');
+                    this.hideOtaOverlay();
+                }, 5000);
+    
+            } else {
+                const response = await this._hass.callApi('POST', `bituopmd/proxy/${deviceIp}/${action}`, body);
+                this.showAlert(`Response: ${JSON.stringify(response)}`);
+            }
         } catch (error) {
             this.showAlert(`Error: ${error.message}`);
         } finally {
-            this.hideOtaOverlay(); // 在最后无论成功还是失败，都要隐藏覆盖页面
+            if (body.configType !== 'wifi') {
+                this.hideOtaOverlay();  // 在非WiFi配置的情况下，继续使用正常流程
+            }
         }
     }
 
