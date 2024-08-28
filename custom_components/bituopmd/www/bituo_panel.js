@@ -225,24 +225,25 @@ class BituoPanel extends HTMLElement {
                             <h3>Device Setting</h3>
                             <div class="button-group">
                                 <button id="zero-energy">Zero Energy</button>
-                                <button id="erase-factory">Erase Factory</button>
+                                <button id="erase-factory">Reset Device</button>
                                 <button id="restart">Restart</button>
                                 <button id="ota">OTA</button>
                             </div>
-                            <label for="report-frequency" class="mqtt-report-frequency-label">MQTT Report Frequency (seconds):</label>
+                            <label for="report-frequency" class="mqtt-report-frequency-label">MQTT Report Interval (seconds):</label>
                             <input id="report-frequency" type="number" min="1" />
-                            <button id="set-report-frequency">Set Report Frequency</button>
+                            <button id="set-report-frequency">Set Report Interval</button>
                         </div>
                         ${this.getPostActionsHtml()}
                         <div class="panel">
-                            <h3>Data Request Frequency</h3>
-                            <label for="data-frequency">Frequency (seconds):</label>
-                            <input id="data-frequency" type="number" min="1"/><br />
+                            <h3>Polling Interval (5-3600s)</h3>
+                            <label for="data-frequency">Interval (seconds):</label>
+                            <input id="data-frequency" type="number" min="5" max="3600"/><br /> <!-- 限制值为 5 到 3600 -->
+                            <small style="color: #555;">Notice: If you have paired multiple devices, it is recommended to increase the polling interval to avoid excessive network load.(default=10s)</small><br />
                             <div class="checkbox-container">
                                 <input id="apply-to-all" type="checkbox">
                                 <label for="apply-to-all">Apply to all devices</label>
                             </div>
-                            <button id="set-data-frequency">Set Data Request Frequency</button>
+                            <button id="set-data-frequency">Set Polling Interval</button> <!-- 按钮文本也可相应修改 -->
                         </div>
                     </div>
                 </div>
@@ -294,9 +295,6 @@ class BituoPanel extends HTMLElement {
             { id: '#restart', getConfig: () => ({ configType: "restart", EspRestart: "true" }) },
             { id: '#erase-factory', getConfig: () => ({ configType: "erase", EraseMessage: "true" }) },
             { id: '#set-report-frequency', getConfig: () => ({ configType: "report", ReportFrequency: parseInt(this.querySelector('#report-frequency').value) }) },
-            { id: '#set-baudrate', getConfig: this.getBaudRateConfig },
-            { id: '#set-parity-stop', getConfig: this.getParityStopConfig },
-            { id: '#set-modbus-address', getConfig: this.getModbusAddressConfig },
             { id: '#set-topic', getConfig: this.getTopicConfig },
             { id: '#set-udp', getConfig: this.getUdpConfig }
         ];
@@ -331,6 +329,49 @@ class BituoPanel extends HTMLElement {
                 this.hideOtaOverlay();
             });
         }
+
+        const setModbusButton = this.querySelector('#set-modbus');
+        if (setModbusButton) {
+            setModbusButton.addEventListener('click', async () => {
+                this.showConfirmationDialog('Are you sure you want to set Modbus configuration?', async () => {
+                    const config = this.getModbusConfig();
+
+                    // Validate Modbus address
+                    const modbusAddress = parseInt(config.Modbusaddress, 10);
+                    if (isNaN(modbusAddress) || modbusAddress < 1 || modbusAddress > 247) {
+                        this.showAlert('Modbus address must be between 1 and 247.');
+                        this.hideOtaOverlay();
+                        return;  // Stop execution if invalid address
+                    }
+
+                    this.showOtaOverlay();
+
+                    try {
+                        // Send all Modbus POST requests in sequence
+                        await Promise.all([
+                            this.performPostAction('save-config', {
+                                configType: 'baudrate',
+                                baudrate: config.baudrate
+                            }),
+                            this.performPostAction('save-config', {
+                                configType: 'ParityStop',
+                                ParityStop: config.ParityStop
+                            }),
+                            this.performPostAction('save-config', {
+                                configType: 'Modbusaddress',
+                                Modbusaddress: config.Modbusaddress
+                            })
+                        ]);
+
+                        this.showAlert('Modbus configuration set successfully.');
+                    } catch (error) {
+                        this.showAlert(`Error: ${error.message}`);
+                    } finally {
+                        this.hideOtaOverlay();
+                    }
+                });
+            });
+        }
     }
 
     showConfirmationDialog(message, onConfirm) {
@@ -355,6 +396,12 @@ class BituoPanel extends HTMLElement {
 
     async setDataRequestFrequency() {
         const frequency = parseInt(this.querySelector('#data-frequency').value);
+
+        if (isNaN(frequency) || frequency < 5 || frequency > 3600) {
+            this.showAlert('Polling Interval must be between 5 and 3600 seconds.');
+            this.hideOtaOverlay();
+            return;
+        }
         const applyToAll = this.querySelector('#apply-to-all').checked;
 
         if (applyToAll) {
@@ -364,7 +411,11 @@ class BituoPanel extends HTMLElement {
             // 逐个发送请求，确保每个设备的设置被正确更新
             for (const option of options) {
                 const deviceIp = option.value;
-                await this.updateDeviceFrequency(deviceIp, frequency);
+                try {
+                    await this.updateDeviceFrequency(deviceIp, frequency);
+                } catch (error) {
+                    this.showAlert(`Error updating frequency for device ${deviceIp}: ${error.message}`);
+                }
             }
         } else {
             const { deviceIp } = this.getSelectedDevice();
@@ -374,7 +425,7 @@ class BituoPanel extends HTMLElement {
             }
             await this.updateDeviceFrequency(deviceIp, frequency);
         }
-        this.showAlert(`Data request frequency set successfully.`);
+        this.showAlert(`Polling Interval set successfully.`);
     }
 
     async updateDeviceFrequency(deviceIp, frequency) {
@@ -481,8 +532,9 @@ class BituoPanel extends HTMLElement {
                 <button id="upload-ca-cert">Upload CA Certificate</button>
             </div>
             <div class="panel">
-                <h3>Modbus Configuration</h3>
-                <label for="baudrate">Baudrate:</label>
+                <h3>Modbus Configuration(Optional)</h3>
+                
+                <label for="baudrate">Baud Rate:</label>
                 <select id="baudrate">
                     <option value="2400">2400</option>
                     <option value="4800">4800</option>
@@ -490,18 +542,19 @@ class BituoPanel extends HTMLElement {
                     <option value="19200">19200</option>
                     <option value="38400">38400</option>
                 </select><br />
-                <button id="set-baudrate">Set Baudrate</button><br />
-                <label for="parity-stop">Parity/Stop:</label>
+                
+                <label for="parity-stop">Data Format:</label>
                 <select id="parity-stop">
                     <option value="N81">N81</option>
                     <option value="E81">E81</option>
                     <option value="O81">O81</option>
                     <option value="N82">N82</option>
                 </select><br />
-                <button id="set-parity-stop">Set Parity/Stop</button><br />
-                <label for="modbus-address">Modbus Address:</label>
+                
+                <label for="modbus-address">Address (1-247):</label>
                 <input id="modbus-address" type="number" min="1" max="247"/><br />
-                <button id="set-modbus-address">Set Modbus Address</button>
+                
+                <button id="set-modbus">Set Modbus Configuration</button>
             </div>
             <div class="panel">
                 <h3>Topic Configuration</h3>
@@ -521,7 +574,7 @@ class BituoPanel extends HTMLElement {
                 <input id="udp-ip" type="text" /><br />
                 <label for="udp-port">Local UDP Port:</label>
                 <input id="udp-port" type="number" /><br />
-                <label for="udp-frequency">Frequency (seconds):</label>
+                <label for="udp-frequency">Reporting interval (seconds):</label>
                 <input id="udp-frequency" type="number" min="1000"/><br />
                 <button id="set-udp">Set UDP</button>
             </div>
@@ -573,7 +626,6 @@ class BituoPanel extends HTMLElement {
     
             } else {
                 const response = await this._hass.callApi('POST', `bituopmd/proxy/${deviceIp}/${action}`, body);
-                this.showAlert(`Response: ${JSON.stringify(response)}`);
             }
         } catch (error) {
             this.showAlert(`Error: ${error.message}`);
@@ -667,26 +719,14 @@ class BituoPanel extends HTMLElement {
         }
     }
 
-    getBaudRateConfig() {
-        return {
-            configType: 'baudrate',
-            baudrate: this.querySelector('#baudrate').value.trim()
-        };
-    }
-    
-    getParityStopConfig() {
-        return {
-            configType: 'ParityStop',
-            ParityStop: this.querySelector('#parity-stop').value.trim()
-        };
-    }
-    
-    getModbusAddressConfig() {
-        return {
-            configType: 'Modbusaddress',
-            Modbusaddress: this.querySelector('#modbus-address').value.trim()
-        };
-    }
+    getModbusConfig() {
+    return {
+        configType: 'modbus',
+        baudrate: this.querySelector('#baudrate').value.trim(),
+        ParityStop: this.querySelector('#parity-stop').value.trim(),
+        Modbusaddress: this.querySelector('#modbus-address').value.trim()
+    };
+}
     
     getTopicConfig() {
         return {
