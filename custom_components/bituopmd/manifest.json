@@ -1,7 +1,7 @@
 {
   "domain": "bituopmd",
   "name": "BituoPMD",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "config_flow": true,
   "zeroconf": ["_http._tcp.local."],
   "documentation": "https://github.com/script0803/BituoPMD",
