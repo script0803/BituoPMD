@@ -61,6 +61,8 @@ def load_ota_versions():
 settings = load_settings()
 ota_versions = load_ota_versions()
 
+
+
 UNIT_MAPPING = {
     "unbalancelinecurrents": PERCENTAGE,
     "powerfactor": None,
@@ -83,7 +85,7 @@ STATE_CLASSES = {
     "rssi": SensorStateClass.MEASUREMENT,
 }
 
-EXCLUDE_FIELDS = {"post", "Post", "Config485", "MqttStatus", "productModel", "ProductModel", "Serialnumber", "SerialNumber", "devicetype", "DeviceType", "FWVersion"}
+EXCLUDE_FIELDS = {"Post", "Config485", "MqttStatus", "ProductModel", "SerialNumber", "DeviceType", "FWVersion", "MCUVersion", "Manufactor"}
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up sensor platform."""
@@ -91,6 +93,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
     current_scan_interval = settings["devices"].get(host_ip, {}).get("scan_interval", 5)
     coordinator = BituoDataUpdateCoordinator(hass, host_ip, current_scan_interval)
     await coordinator.async_config_entry_first_refresh()
+
+    # Store the coordinator so it can be accessed by other platforms like button
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {
+        'sensor_coordinator': coordinator
+    }
 
     # Fetch device model and firmware version
     try:
@@ -101,11 +109,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     # Create sensor entities for each data field
     sensors = [
-        BituoSensor(coordinator, host_ip, field, device_info.get("model", "Unknown Model"), device_info.get("fw_version", "Unknown"))
+        BituoSensor(coordinator, host_ip, field, device_info.get("model", "Unknown Model"), device_info.get("fw_version", "Unknown"), device_info.get("manufacturer", "Unknown"), device_info.get("mcu_version", "Unknown"))
         for field in coordinator.data.keys()
         if field not in EXCLUDE_FIELDS
     ]
-    ota_sensor = BituoOTASensor(coordinator, host_ip, device_info.get("model", "Unknown Model"), device_info.get("fw_version", "Unknown"))
+    ota_sensor = BituoOTASensor(coordinator, host_ip, device_info.get("model", "Unknown Model"), device_info.get("fw_version", "Unknown"), device_info.get("manufacturer", "Unknown"), device_info.get("mcu_version", "Unknown"))
     sensors.append(ota_sensor)
 
     # Assign the OTA sensor to the coordinator
@@ -195,8 +203,10 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
             response.raise_for_status()
             data = response.json()
             return {
-                "model": data.get("productModel") or data.get("ProductModel", "Unknown Model"),
-                "fw_version": data.get("FWVersion") or data.get("fwVersion", "Unknown"),
+                "model": data.get("ProductModel", "Unknown Model"),
+                "fw_version": data.get("FWVersion", "Unknown"),
+                "manufacturer": data.get("Manufactor", "Unknown"),
+                "mcu_version": data.get("MCUVersion", "Unknown"),
             }
         except Exception as err:
             raise UpdateFailed(f"Error fetching device info: {err}")
@@ -229,19 +239,20 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
 class BituoSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Sensor."""
 
-    def __init__(self, coordinator, host_ip, field, model, fw_version):
+    def __init__(self, coordinator, host_ip, field, model, fw_version, manufacturer, mcu_version):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._field = field
         self._attr_name = self.format_field_name(field)
         self._attr_unique_id = f"{host_ip}_{field}"
+        self.entity_id = f"sensor.{host_ip.replace('.', '_')}_{self.format_field_entity_id(field)}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, host_ip)},
             name=f"{model} - {host_ip}",
-            manufacturer="BituoTechnik",
+            manufacturer=manufacturer,
             model=model,
-            sw_version=fw_version,
-            configuration_url=f"http://{host_ip}"  # 新增的配置 URL
+            sw_version=f"S{fw_version}_M{self.format_version(mcu_version)}",
+            configuration_url=f"http://{host_ip}"  # embed URL
         )
         self._host_ip = host_ip
         self._native_unit_of_measurement = self.get_initial_unit_of_measurement()
@@ -299,6 +310,31 @@ class BituoSensor(CoordinatorEntity, SensorEntity):
         formatted_name = ''.join([' ' + char if char.isupper() else char for char in field]).title().strip()
         formatted_name = formatted_name.replace("X", " X").replace("Y", " Y").replace("Z", " Z")
         return formatted_name
+    
+    @staticmethod
+    def format_field_entity_id(field):
+        """Format field name to be more suitable for unique_id."""
+        formatted_name = ''.join(['_' + char.lower() if char.isupper() else char for char in field])
+        formatted_name = formatted_name.replace("x", "_x").replace("y", "_y").replace("z", "_z")
+        return formatted_name.strip('_')
+
+    @staticmethod
+    def format_version(version):
+        if version.lower() == "unknown":
+            return version 
+        parts = version.split('.')
+        formatted_parts = [] 
+        for part in parts:
+            if part.strip():  # 检查部分是否为空
+                try:
+                    formatted_parts.append(str(int(part)))
+                except ValueError:
+                    formatted_parts.append('unknown')
+            else:
+                formatted_parts.append('unknown')  # 如果部分为空，设置为 'unknown'
+        
+        formatted_version = '.'.join(formatted_parts)
+        return formatted_version
 
     @property
     def native_value(self):
@@ -318,7 +354,7 @@ class BituoSensor(CoordinatorEntity, SensorEntity):
 class BituoOTASensor(CoordinatorEntity, SensorEntity):
     """Representation of an OTA status sensor."""
 
-    def __init__(self, coordinator, host_ip, model, fw_version):
+    def __init__(self, coordinator, host_ip, model, fw_version, manufacturer, mcu_version):
         """Initialize the OTA status sensor."""
         super().__init__(coordinator)
         self._attr_name = "OTA Status"
@@ -326,15 +362,34 @@ class BituoOTASensor(CoordinatorEntity, SensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, host_ip)},
             name=f"{model} - {host_ip}",
-            manufacturer="BituoTechnik",
+            manufacturer=manufacturer,
             model=model,
-            sw_version=fw_version,
+            sw_version=f"S{fw_version}_M{self.format_version(mcu_version)}",
+            configuration_url=f"http://{host_ip}"  # embed URL
         )
         self._host_ip = host_ip
-        self._attr_state = "Unknown"
+        self._attr_state = "unknown"
         coordinator.ota_entity = self  # 存储自身的引用到协调器中
         self._attr_icon = "mdi:update"
         self.entity_id = f"sensor.{self._attr_unique_id.replace('.', '_')}"
+    
+    @staticmethod
+    def format_version(version):
+        if version.lower() == "unknown":
+            return version 
+        parts = version.split('.')
+        formatted_parts = [] 
+        for part in parts:
+            if part.strip():  # 检查部分是否为空
+                try:
+                    formatted_parts.append(str(int(part)))
+                except ValueError:
+                    formatted_parts.append('unknown')
+            else:
+                formatted_parts.append('unknown')  # 如果部分为空，设置为 'unknown'
+        
+        formatted_version = '.'.join(formatted_parts)
+        return formatted_version
 
     @property
     def native_value(self):

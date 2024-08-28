@@ -30,11 +30,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
         device_info = await coordinator.fetch_device_info()
     except UpdateFailed:
         _LOGGER.error("Failed to fetch device info for %s", host_ip)
-        device_info = {"model": "Unknown Model", "fw_version": "Unknown"}
+        device_info = {"model": "Unknown Model", "fw_version": "Unknown", "manufacturer": "Unknown", "mcu_version": "Unknown"}
 
     switches = []
     if coordinator.data and "switchstatus" in coordinator.data:
-        switches.append(BituoSwitch(coordinator, host_ip, device_info))
+        switches.append(BituoSwitch(coordinator, host_ip, device_info["model"], device_info["fw_version"], device_info["manufacturer"], device_info["mcu_version"]))
 
     async_add_entities(switches, True)
 
@@ -77,6 +77,8 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
             return {
                 "model": data.get("productModel") or data.get("ProductModel", "Unknown Model"),
                 "fw_version": data.get("FWVersion") or data.get("fwVersion", "Unknown"),
+                "manufacturer": data.get("Manufactor", "Unknown"),
+                "mcu_version": data.get("MCUVersion", "Unknown"),
             }
         except Exception as err:
             raise UpdateFailed(f"Error fetching device info: {err}")
@@ -84,19 +86,39 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
 class BituoSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of a Switch."""
 
-    def __init__(self, coordinator, host_ip, device_info):
+    def __init__(self, coordinator, host_ip, model, fw_version, manufacturer, mcu_version):
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._attr_name = f"{device_info['model']} - {host_ip}"
+        self._attr_name = f"{model} - {host_ip}"
         self._attr_unique_id = f"{host_ip}_switch"
+        self.entity_id = f"switch.{host_ip.replace('.', '_')}_switch"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, host_ip)},
-            name=f"{device_info['model']} - {host_ip}",
-            manufacturer="BituoTechnik",
-            model=device_info['model'],
-            sw_version=device_info['fw_version'],
+            name=f"{model} - {host_ip}",
+            manufacturer=manufacturer,
+            model=model,
+            sw_version=f"S{fw_version}_M{self.format_version(mcu_version)}",
+            configuration_url=f"http://{host_ip}"  # embed URL
         )
         self._host_ip = host_ip
+    
+    @staticmethod
+    def format_version(version):
+        if version.lower() == "unknown":
+            return version 
+        parts = version.split('.')
+        formatted_parts = [] 
+        for part in parts:
+            if part.strip():  # 检查部分是否为空
+                try:
+                    formatted_parts.append(str(int(part)))
+                except ValueError:
+                    formatted_parts.append('unknown')
+            else:
+                formatted_parts.append('unknown')  # 如果部分为空，设置为 'unknown'
+        
+        formatted_version = '.'.join(formatted_parts)
+        return formatted_version
 
     @property
     def is_on(self):

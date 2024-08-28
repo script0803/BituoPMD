@@ -18,6 +18,7 @@ class BituoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self.host = None
         self.name = None
         self.devices = []
+        self._manual_scan_active = False
 
     async def async_step_user(self, user_input=None):
         errors = {}
@@ -45,6 +46,11 @@ class BituoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         if "bituotechnik" not in self.name.lower():
             return self.async_abort(reason="not_bituotechnik_device")
+        
+        existing_entries = self._async_current_entries()
+        if any(entry.data.get(CONF_HOST_IP) == self.host for entry in existing_entries):
+            _LOGGER.info(f"Device {self.name} at {self.host} already configured, ignoring discovery.")
+            return self.async_abort(reason="already_configured")
 
         await self.async_set_unique_id(self.host)
         self._abort_if_unique_id_configured()
@@ -61,12 +67,22 @@ class BituoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_zeroconf_confirm(self, user_input=None):
         """Handle zeroconf discovery confirmation."""
         if user_input is not None:
+            # 检查设备是否已经存在于当前配置的设备列表中
+            existing_entries = self._async_current_entries()
+            if any(entry.data.get(CONF_HOST_IP) == self.host for entry in existing_entries):
+                _LOGGER.info(f"Device {self.name} at {self.host} is already configured, aborting configuration.")
+                return self.async_abort(reason="already_configured")
+
+            # 如果设备没有配置，继续创建配置条目
             entry = self.async_create_entry(
                 title=self.name,
                 data={CONF_HOST_IP: self.host}
             )
-            # remove paired device
+            
+            # 在设备配对成功后，移除已配对的设备
             self.devices = [device for device in self.devices if device["ip"] != self.host]
+            await self.async_remove_discovered_device(self.host)
+            
             return entry
 
         data_schema = vol.Schema({
@@ -116,9 +132,32 @@ class BituoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             selected_device_ip = user_input["device"]
             selected_device_name = next(device["name"] for device in self.devices if device["ip"] == selected_device_ip)
-            return self.async_create_entry(title=f"{selected_device_name} - {selected_device_ip}", data={CONF_HOST_IP: selected_device_ip})
+
+            # 检查设备是否已经配置
+            existing_entries = self._async_current_entries()
+            if any(entry.data.get(CONF_HOST_IP) == selected_device_ip for entry in existing_entries):
+                _LOGGER.info(f"Device {selected_device_name} at {selected_device_ip} already configured, ignoring.")
+                return self.async_abort(reason="already_configured")  # 终止重复配置
+
+            # 创建配置条目
+            entry = self.async_create_entry(title=f"{selected_device_name} - {selected_device_ip}", data={CONF_HOST_IP: selected_device_ip})
+
+            # 成功配对后移除设备
+            await self.async_remove_discovered_device(selected_device_ip)
+
+            return entry
 
         return self.async_abort(reason="no_device_selected")
+    
+    async def async_remove_discovered_device(self, host_ip):
+        """Remove the discovered device from the discovered list."""
+        for flow in self.hass.config_entries.flow.async_progress():
+            if flow["context"]["source"] == 'zeroconf':
+                if flow["context"]["unique_id"] == host_ip:
+                    self.hass.config_entries.flow.async_abort(flow["flow_id"])
+                    break
+        else:
+            _LOGGER.info(f"No matching flow found for IP: {host_ip}.")
 
     async def async_step_manual(self, user_input=None):
         errors = {}
@@ -197,7 +236,9 @@ class BituoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 address = socket.inet_ntoa(info.addresses[0])
                 if "bituotechnik" in name.lower():  # Ensure the device name contains 'bituotechnik'
                     # Check if the device is already in the list or already configured
-                    if not any(device["ip"] == address for device in self.devices):
-                        existing_entries = self._async_current_entries()
-                        if not any(entry.data.get(CONF_HOST_IP) == address for entry in existing_entries):
+                    existing_entries = self._async_current_entries()
+                    
+                    # 过滤掉已存在的设备
+                    if not any(entry.data.get(CONF_HOST_IP) == address for entry in existing_entries):
+                        if not any(device["ip"] == address for device in self.devices):
                             self.devices.append({"ip": address, "name": name.split(".")[0]})
