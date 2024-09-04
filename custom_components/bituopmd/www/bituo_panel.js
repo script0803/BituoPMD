@@ -382,13 +382,13 @@ class BituoPanel extends HTMLElement {
             this.hideOtaOverlay();
             return;
         }
-        const applyToAll = this.querySelector('#apply-to-all').checked;
     
+        const applyToAll = this.querySelector('#apply-to-all').checked;
         const offlineDevices = [];
         const onlineTasks = [];
         const deviceSelectElement = this.querySelector('#device-select');
         const options = Array.from(deviceSelectElement.options).filter(option => option.value);
-        
+    
         if (applyToAll) {
             // 收集任务并检查设备在线状态
             for (const option of options) {
@@ -407,33 +407,31 @@ class BituoPanel extends HTMLElement {
                 };
                 onlineTasks.push(task);
             }
+    
+            // 限制并发数量
+            await this.runWithConcurrencyLimit(onlineTasks, 10);
+    
+            const totalDevices = options.length;
+            const offlineCount = offlineDevices.length;
+            this.showAlert(`Total devices: ${totalDevices}. Offline devices: ${offlineCount}. Polling interval has been successfully updated for all online devices.`);
         } else {
             const { deviceIp } = this.getSelectedDevice();
             if (!deviceIp) {
                 this.showAlert('No device selected.');
                 return;
             }
-            const task = async () => {
-                try {
-                    const isOnline = await this.checkDeviceStatus(deviceIp);
-                    if (isOnline) {
-                        await this.updateDeviceFrequency(deviceIp, frequency);
-                    } else {
-                        offlineDevices.push(deviceIp);
-                    }
-                } catch (error) {
-                    offlineDevices.push(deviceIp);
+            try {
+                const isOnline = await this.checkDeviceStatus(deviceIp);
+                if (isOnline) {
+                    await this.updateDeviceFrequency(deviceIp, frequency);
+                    this.showAlert('Polling interval has been successfully updated for the selected device.');
+                } else {
+                    this.showAlert('Selected device is offline, cannot update.');
                 }
-            };
-            onlineTasks.push(task);
+            } catch (error) {
+                this.showAlert(`Error checking status or updating frequency for device ${deviceIp}: ${error.message}`);
+            }
         }
-    
-        // 限制并发数量
-        await this.runWithConcurrencyLimit(onlineTasks, 10);
-    
-        const totalDevices = options.length;
-        const offlineCount = offlineDevices.length;
-        this.showAlert(`Total devices: ${totalDevices}. Offline devices: ${offlineCount}. Polling interval has been successfully updated for all online devices.`);
     }
     
     async runWithConcurrencyLimit(tasks, limit) {
