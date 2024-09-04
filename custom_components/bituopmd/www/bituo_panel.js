@@ -238,7 +238,7 @@ class BituoPanel extends HTMLElement {
                             <h3>Polling Interval (5-3600s)</h3>
                             <label for="data-frequency">Interval (seconds):</label>
                             <input id="data-frequency" type="number" min="5" max="3600"/><br /> <!-- 限制值为 5 到 3600 -->
-                            <small style="color: #555;">Notice: If you have paired multiple devices, it is recommended to increase the polling interval to avoid excessive network load.(default=10s)</small><br />
+                            <small style="color: #555;">Notice: If you have paired multiple devices, it is recommended to increase the polling interval to avoid excessive network load.(default=5s)</small><br />
                             <div class="checkbox-container">
                                 <input id="apply-to-all" type="checkbox">
                                 <label for="apply-to-all">Apply to all devices</label>
