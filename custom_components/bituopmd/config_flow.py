@@ -80,8 +80,7 @@ class BituoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             )
             
             # 在设备配对成功后，移除已配对的设备
-            self.devices = [device for device in self.devices if device["ip"] != self.host]
-            await self.async_remove_discovered_device(self.host)
+            await self.hass.async_add_executor_job(self.async_remove_discovered_device, self.host)
             
             return entry
 

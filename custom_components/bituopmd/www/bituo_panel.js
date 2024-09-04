@@ -374,48 +374,38 @@ class BituoPanel extends HTMLElement {
         }
     }
 
-    showConfirmationDialog(message, onConfirm) {
-        const dialog = this.querySelector('#confirmation-dialog');
-        const messageElement = this.querySelector('#confirmation-message');
-        const yesButton = this.querySelector('#confirm-yes');
-        const noButton = this.querySelector('#confirm-no');
-    
-        messageElement.textContent = message;
-        dialog.style.display = 'block';
-    
-        yesButton.onclick = () => {
-            dialog.style.display = 'none';
-            onConfirm();
-        };
-    
-        noButton.onclick = () => {
-            dialog.style.display = 'none';
-            this.hideOtaOverlay();
-        };
-    }
-
     async setDataRequestFrequency() {
         const frequency = parseInt(this.querySelector('#data-frequency').value);
-
+    
         if (isNaN(frequency) || frequency < 5 || frequency > 3600) {
             this.showAlert('Polling Interval must be between 5 and 3600 seconds.');
             this.hideOtaOverlay();
             return;
         }
         const applyToAll = this.querySelector('#apply-to-all').checked;
-
+    
+        const offlineDevices = [];
+        const onlineTasks = [];
+        const deviceSelectElement = this.querySelector('#device-select');
+        const options = Array.from(deviceSelectElement.options).filter(option => option.value);
+        
         if (applyToAll) {
-            const deviceSelectElement = this.querySelector('#device-select');
-            const options = Array.from(deviceSelectElement.options).filter(option => option.value);
-
-            // 逐个发送请求，确保每个设备的设置被正确更新
+            // 收集任务并检查设备在线状态
             for (const option of options) {
                 const deviceIp = option.value;
-                try {
-                    await this.updateDeviceFrequency(deviceIp, frequency);
-                } catch (error) {
-                    this.showAlert(`Error updating frequency for device ${deviceIp}: ${error.message}`);
-                }
+                const task = async () => {
+                    try {
+                        const isOnline = await this.checkDeviceStatus(deviceIp);
+                        if (isOnline) {
+                            await this.updateDeviceFrequency(deviceIp, frequency);
+                        } else {
+                            offlineDevices.push(deviceIp);
+                        }
+                    } catch (error) {
+                        offlineDevices.push(deviceIp);
+                    }
+                };
+                onlineTasks.push(task);
             }
         } else {
             const { deviceIp } = this.getSelectedDevice();
@@ -423,9 +413,44 @@ class BituoPanel extends HTMLElement {
                 this.showAlert('No device selected.');
                 return;
             }
-            await this.updateDeviceFrequency(deviceIp, frequency);
+            const task = async () => {
+                try {
+                    const isOnline = await this.checkDeviceStatus(deviceIp);
+                    if (isOnline) {
+                        await this.updateDeviceFrequency(deviceIp, frequency);
+                    } else {
+                        offlineDevices.push(deviceIp);
+                    }
+                } catch (error) {
+                    offlineDevices.push(deviceIp);
+                }
+            };
+            onlineTasks.push(task);
         }
-        this.showAlert(`Polling Interval set successfully.`);
+    
+        // 限制并发数量
+        await this.runWithConcurrencyLimit(onlineTasks, 10);
+    
+        const totalDevices = options.length;
+        const offlineCount = offlineDevices.length;
+        this.showAlert(`Total devices: ${totalDevices}. Offline devices: ${offlineCount}. Polling interval has been successfully updated for all online devices.`);
+    }
+    
+    async runWithConcurrencyLimit(tasks, limit) {
+        const results = [];
+        const executing = [];
+        for (const task of tasks) {
+            const p = task().then(result => {
+                executing.splice(executing.indexOf(p), 1);
+                return result;
+            });
+            results.push(p);
+            executing.push(p);
+            if (executing.length >= limit) {
+                await Promise.race(executing);
+            }
+        }
+        return Promise.all(results);
     }
 
     async updateDeviceFrequency(deviceIp, frequency) {
@@ -456,21 +481,51 @@ class BituoPanel extends HTMLElement {
         clearInterval(this.intervalId);
     }
 
+    async limitConcurrency(tasks, limit) {
+        const results = [];
+        const executing = [];
+    
+        for (const task of tasks) {
+            const p = task();  // 执行任务
+            results.push(p);
+    
+            if (limit <= tasks.length) {
+                const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+                executing.push(e);
+                if (executing.length >= limit) {
+                    await Promise.race(executing);
+                }
+            }
+        }
+        return Promise.all(results);
+    }
+
     async loadDevices() {
         const deviceSelectElement = this.querySelector('#device-select');
         const selectedDeviceIp = deviceSelectElement.value;  // 保存当前选中的设备IP
         deviceSelectElement.innerHTML = '<option value="" disabled selected>Loading devices...</option>';
+
         try {
             const response = await this._hass.callApi('GET', 'bituopmd/devices');
             deviceSelectElement.innerHTML = '';  // 清空之前的内容
+
             if (response && response.length) {
-                for (const device of response) {
+                const tasks = response.map(device => async () => {
                     const option = this.findOrCreateOption(deviceSelectElement, device.ip);
-                    const isOnline = await this.checkDeviceStatus(device.ip);
+                    let isOnline = false;
+                    try {
+                        isOnline = await this.checkDeviceStatus(device.ip);
+                    } catch (error) {
+                        isOnline = false;  // 超时或错误，视为离线
+                    }
                     option.text = isOnline ? device.name : `${device.name} (offline)`;
                     option.disabled = !isOnline;
                     deviceSelectElement.add(option);
-                }
+                });
+
+                // 使用并发限制执行任务，每次最多执行10个
+                await this.limitConcurrency(tasks, 10);
+
                 // 恢复之前选中的设备
                 deviceSelectElement.value = selectedDeviceIp;
             } else {
@@ -491,12 +546,33 @@ class BituoPanel extends HTMLElement {
         return option;
     }
 
-    async checkDeviceStatus(ip) {
+    async checkDeviceStatus(ip, timeout = 3000) {
+        const url = `bituopmd/proxy/${ip}/data`;
+    
+        // 创建超时的 Promise
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request timed out')), timeout)
+        );
+    
+        // 创建 API 请求的 Promise
+        const apiPromise = this._hass.callApi('GET', url)
+            .then(response => {
+                // 确保有有效的响应数据
+                if (response && response.response) {
+                    // 根据实际数据来判断设备状态
+                    return response.response !== "404: Not Found";
+                } else {
+                    // 没有有效数据时视为离线
+                    return false;
+                }
+            })
+            .catch(() => false); // 处理请求错误
+    
         try {
-            const response = await this._hass.callApi('GET', `bituopmd/proxy/${ip}/data`);
-            return response.response && response.response !== "404: Not Found";
+            // 使用 Promise.race 来处理超时和 API 请求
+            return await Promise.race([apiPromise, timeoutPromise]);
         } catch {
-            return false;
+            return false; // 返回 false 表示设备离线或请求超时
         }
     }
 
