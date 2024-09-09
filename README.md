@@ -25,7 +25,7 @@ After connecting your ESP device to the network following the manual guide, We h
 ### Discoverd
 
 When you add your ESP device to the same network as Home Assistant, the device will be automatically scanned and appear in the discovered list.
-![](/images/discoverd.jpg)
+![](/images/discoverd.png)
 
 After clicking 'Configure,' the following dialog box will pop up. Then, click 'Submit' to add the device.
 ![](/images/discoverd-config.jpg)
@@ -39,7 +39,7 @@ After clicking 'Configure,' the following dialog box will pop up. Then, click 'S
 
 ### Manual configure
 
-1. Select 'Use Zeroconf to scan device', and click 'Submit'.
+1. Select 'Use IP to pair devices', and click 'Submit'.
 ![](/images/manual-1.jpg)
 2. Enter the device's IP address into the input field. Click the submit button.
 ![](/images/manual-2.jpg)
