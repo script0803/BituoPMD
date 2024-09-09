@@ -25,61 +25,74 @@ After connecting your ESP device to the network following the manual guide, We h
 ### Discoverd
 
 When you add your ESP device to the same network as Home Assistant, the device will be automatically scanned and appear in the discovered list.
+
 ![](/images/discoverd.png)
 
 After clicking 'Configure,' the following dialog box will pop up. Then, click 'Submit' to add the device.
-![](/images/discoverd-config.jpg)
+
+![](/images/discoverd-config.png)
 
 ### Zeroconf scan
 
 1. Select 'Use Zeroconf to scan device', and click 'Submit'. The integration will start scanning for devices on the current network.
-![](/images/zeroconf-1.jpg)
+
+![](/images/zeroconf-1.png)
+
 2. The integration will list the devices it has scanned. Select the device you want to add and proceed with the addition.
-![](/images/zeroconf-2.jpg)
+
+![](/images/zeroconf-2.png)
 
 ### Manual configure
 
 1. Select 'Use IP to pair devices', and click 'Submit'.
-![](/images/manual-1.jpg)
+
+![](/images/manual-1.png)
+
 2. Enter the device's IP address into the input field. Click the submit button.
-![](/images/manual-2.jpg)
+
+![](/images/manual-2.png)
 
 ## Devices supported
-- SPM01-D1EW
-- SPM01-D2EW
-- SPM01-U1EW
-- SPM01-U2EW
-- SPM02-D1EW
-- SPM02-D2EW
-- SPM02-U1EW
-- SPM02-U2EW
-- SDM01-EW0
-- SDM01-EWM
-- SDM02-EW
+- SPM01-xxEW [[More details]](https://shop.bituo-technik.com/products/esp32-wifi-energy-meter-spm01-1p-n-63a)
+- SPM02-xxEW [[More details]](https://shop.bituo-technik.com/products/esp32-wifi-energy-meter-spm02-3p-n-63a-copy)
+- SDM01-EWx  [[More details]](https://shop.bituo-technik.com/products/sdm01-ew0-energy-meter-3p-n-up-to-200a-esp32-wi-fi-ble)
+- SDM02-EW   [[More details]](https://shop.bituo-technik.com/collections/all)
 
 ## Detail information
 
 Click on the device name to enter the details page, where you can view all the parameters measured by the device.
+
 ![](/images/interface-1.jpg)
+
 Clicking 'View' will redirect you to the device's embedded webpage.
+
 ![](/images/interface-2.jpg)
+
 All entities can have their units adjusted according to Home Assistant's rules.
+
 ![](/images/interface-3.jpg)
 
 ## Device settings
 
 Once the integration is activated, you can see the entry to the settings page in Home Assistant's sidebar.
+
 ![](/images/UI-1.jpg)
 
 On this page, you can adjust all the settings of the device, as well as access other functions like Zero Energy, Restart, Erase Factory, and OTA.
+
 ![](/images/UI-2.jpg)
+
 Click the dropdown menu at the top to select the device you want to configure.
+
 ![](/images/UI-3.png)
 
 ## Device OTA
 The device's parameter page will display the OTA status. When 'OTA available' is shown, please proceed to the embedded web page or the integration's settings page to perform the OTA.
+
 ![](/images/OTA-2.jpg)
 
 ![](/images/OTA-3.jpg)
+
 If 'Up to date' is displayed, it means the device is already on the latest version and no OTA is required.
-![](/images/OTA-1.jpg)
+
+![](/images/OTA-1.png)
