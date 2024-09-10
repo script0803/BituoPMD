@@ -180,6 +180,7 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
             )
             response.raise_for_status()
             data = response.json()
+            # _LOGGER.debug(f"{self.host_ip} - {data}")
             
             # Multiply power values by 1000
             for key in data:
@@ -218,9 +219,13 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
                 return
 
             device_info = await self.fetch_device_info()
-            model = device_info.get("model", "Unknown Model")
             current_version = device_info.get("fw_version", "Unknown")
-            latest_version = self.ota_versions.get(model, "Unknown")
+
+            if current_version != "Unknown" and int(current_version.split('.')[0]) >= 4:
+                latest_version = self.ota_versions.get("common", "Unknown")
+            else:
+                model = device_info.get("model", "Unknown Model")
+                latest_version = self.ota_versions.get(model, "Unknown")
 
             if latest_version != "Unknown" and current_version != "Unknown" and version.parse(current_version) < version.parse(latest_version):
                 self.ota_entity._attr_state = "OTA Available"
@@ -263,6 +268,8 @@ class BituoSensor(CoordinatorEntity, SensorEntity):
         if "power" in self._field.lower() and "active" in self._field.lower():
             self._attr_suggested_display_precision = 0
         if "power" in self._field.lower() and "apparent" in self._field.lower():
+            self._attr_suggested_display_precision = 0
+        if "unbalancelinecurrents" in self._field.lower():
             self._attr_suggested_display_precision = 0
 
     def get_initial_unit_of_measurement(self):

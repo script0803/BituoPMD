@@ -373,6 +373,26 @@ class BituoPanel extends HTMLElement {
             });
         }
     }
+    
+    showConfirmationDialog(message, onConfirm) {
+        const dialog = this.querySelector('#confirmation-dialog');
+        const messageElement = this.querySelector('#confirmation-message');
+        const yesButton = this.querySelector('#confirm-yes');
+        const noButton = this.querySelector('#confirm-no');
+    
+        messageElement.textContent = message;
+        dialog.style.display = 'block';
+    
+        yesButton.onclick = () => {
+            dialog.style.display = 'none';
+            onConfirm();
+        };
+    
+        noButton.onclick = () => {
+            dialog.style.display = 'none';
+            this.hideOtaOverlay();
+        };
+    }
 
     async setDataRequestFrequency() {
         const frequency = parseInt(this.querySelector('#data-frequency').value);
@@ -411,9 +431,8 @@ class BituoPanel extends HTMLElement {
             // 限制并发数量
             await this.runWithConcurrencyLimit(onlineTasks, 10);
     
-            const totalDevices = options.length;
-            const offlineCount = offlineDevices.length;
-            this.showAlert(`Total devices: ${totalDevices}. Offline devices: ${offlineCount}. Polling interval has been successfully updated for all online devices.`);
+            const onlineDevices = options.length - offlineDevices.length;
+            this.showAlert(`Polling interval has been successfully updated for ${onlineDevices} online devices.`);
         } else {
             const { deviceIp } = this.getSelectedDevice();
             if (!deviceIp) {
@@ -654,7 +673,7 @@ class BituoPanel extends HTMLElement {
             </div>
         `;
     }
-    
+
     async performGetAction(action) {
         const { deviceIp } = this.getSelectedDevice();
         if (!deviceIp) {
@@ -699,6 +718,7 @@ class BituoPanel extends HTMLElement {
     
             } else {
                 const response = await this._hass.callApi('POST', `bituopmd/proxy/${deviceIp}/${action}`, body);
+                this.showAlert(response.response);
             }
         } catch (error) {
             this.showAlert(`Error: ${error.message}`);
