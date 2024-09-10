@@ -655,7 +655,6 @@ class BituoPanel extends HTMLElement {
         `;
     }
     
-
     async performGetAction(action) {
         const { deviceIp } = this.getSelectedDevice();
         if (!deviceIp) {

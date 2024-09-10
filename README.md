@@ -4,7 +4,7 @@
 
 ### Install with HACS 
 
-[![Open BituoPMD inside your Home Assistant Community Store (HACS).](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Script0803&repository=bituopmd&category=integration)
+[![Open BituoPMD inside your Home Assistant Community Store (HACS).](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Script0803&repository=bituopmd&category=integration) 👈Click this button to install.(Recommended)
 
 1. Open HACS (Home Assistant Community Store).
 2. Navigate to Integrations.
@@ -62,7 +62,7 @@ After clicking 'Configure,' the following dialog box will pop up. Then, click 'S
 
 Click on the device name to enter the details page, where you can view all the parameters measured by the device.
 
-![](/images/interface-1.jpg)
+![](/images/interface-1.png)
 
 Clicking 'View' will redirect you to the device's embedded webpage.
 
