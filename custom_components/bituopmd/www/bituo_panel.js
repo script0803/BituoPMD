@@ -10,6 +10,9 @@ class BituoPanel extends HTMLElement {
             const title = this.config ? this.config.title : "BituoPMD";
             this.innerHTML = `
                 <style>
+                    html, body {
+                        overflow-x: hidden;
+                    }
                     /* 默认样式，适用于白色模式 */
                     .container {
                         display: flex;
@@ -209,6 +212,12 @@ class BituoPanel extends HTMLElement {
 
                         .confirmation-dialog button:hover {
                             background-color: #0056b3 !important; /* 按钮悬停时的颜色 */
+                        }
+                    }
+                    @media (max-width: 768px) {
+                        .container {
+                            max-width: 100vw;
+                            overflow-x: hidden;
                         }
                     }
                 </style>
