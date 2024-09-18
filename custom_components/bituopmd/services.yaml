@@ -1,9 +1,10 @@
 set_frequency:
-  description: "Set the data fetch frequency for a specific device."
+  name: "Set Frequency"
+  description: "Set the frequency of the device."
   fields:
     frequency:
-      description: "The new frequency in seconds for data fetching."
-      example: 10
+      name: "Frequency"
+      description: "The frequency to set."
     device_id:
-      description: "The ID of the device to update the frequency for."
-      example: "192.168.3.143"
+      name: "Device ID"
+      description: "The ID of the device to set the frequency for."
