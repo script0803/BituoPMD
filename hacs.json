@@ -1,6 +1,4 @@
 {
   "name": "BituoPMD",
-  "homeassistant": "2023.1.0",
-  "iot_class": "local_polling",
-  "render_readme": true
+  "homeassistant": "0.104.0",
 }
