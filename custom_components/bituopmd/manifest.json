@@ -11,6 +11,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/script0803/BituoPMD/issues",
   "integration_type": "device",
-  "quality_scale": "gold",
-  "description": "Integration for Bituo Power Monitoring Devices."
+  "quality_scale": "gold"
 }
