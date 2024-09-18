@@ -6,20 +6,11 @@
   "zeroconf": ["_http._tcp.local."],
   "documentation": "https://github.com/script0803/BituoPMD",
   "requirements": [],
-  "dependencies": [],
+  "dependencies": ["http"],
   "codeowners": ["@Script0803"],
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/script0803/BituoPMD/issues",
   "integration_type": "device",
-  "supported_brands": ["generic"],
-  "quality_scale": "platinum",
-  "translators": ["@Script0803"],
-  "translations": ["en"],
+  "quality_scale": "gold",
   "description": "Integration for Bituo Power Monitoring Devices.",
-  "homeassistant": {
-    "components": [
-      "sensor",
-      "control"
-    ]
-  }
 }
