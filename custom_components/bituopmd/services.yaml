@@ -1,10 +1,23 @@
 set_frequency:
-  name: "Set Frequency"
-  description: "Set the frequency of the device."
+  name: Set polling interval
+  description: Change how often Home Assistant polls one Bituo device.
   fields:
-    frequency:
-      name: "Frequency"
-      description: "The frequency to set."
     device_id:
-      name: "Device ID"
-      description: "The ID of the device to set the frequency for."
+      name: Device IP
+      description: The configured IP address of the Bituo device.
+      required: true
+      example: 192.0.2.10
+      selector:
+        text:
+    frequency:
+      name: Polling interval
+      description: Polling interval in seconds.
+      required: true
+      default: 5
+      example: 15
+      selector:
+        number:
+          min: 5
+          max: 3600
+          step: 1
+          mode: box

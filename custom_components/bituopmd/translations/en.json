@@ -1,0 +1,65 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This device is already configured.",
+      "cannot_connect": "Unable to connect to the device.",
+      "not_bituotechnik_device": "The discovered service is not a Bituo power monitoring device."
+    },
+    "error": {
+      "already_configured": "This device is already configured.",
+      "cannot_connect": "Unable to connect. Check the IP address and device availability."
+    },
+    "step": {
+      "user": {
+        "title": "Add a Bituo power monitoring device",
+        "description": "Enter the device's fixed IP address.",
+        "data": {
+          "host_ip": "IP address"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Confirm discovered Bituo device",
+        "description": "Set up {name} at {host}?"
+      },
+      "reconfigure": {
+        "title": "Update device address",
+        "description": "Changing the address preserves the existing config entry.",
+        "data": {
+          "host_ip": "IP address"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BituoPMD options",
+        "description": "Choose how often Home Assistant polls this device.",
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "services": {
+    "set_frequency": {
+      "name": "Set polling interval",
+      "description": "Change the polling interval for one configured Bituo device.",
+      "fields": {
+        "device_id": {
+          "name": "Device IP",
+          "description": "The configured IP address of the Bituo device."
+        },
+        "frequency": {
+          "name": "Polling interval",
+          "description": "Polling interval in seconds (5-3600)."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "device_not_found": {
+      "message": "No configured BituoPMD device was found at {host}."
+    }
+  }
+}

@@ -1,98 +1,121 @@
-# Bituo Device for Home Assistant
+# BituoPMD for Home Assistant
 
-## Installation
+An optimized fork of
+[`script0803/BituoPMD`](https://github.com/script0803/BituoPMD) for Bituo
+SPM/SDM power monitoring devices.
 
-### Install with HACS 
+This fork keeps the original `bituopmd` integration domain, config-entry data,
+device identifiers, and entity unique IDs. It can replace V1.0.4 without
+re-adding devices or changing existing entity IDs.
 
-[![Open BituoPMD inside your Home Assistant Community Store (HACS).](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Script0803&repository=bituopmd&category=integration) 👈Click this button to install.(Recommended)
+## What is improved
 
-1. Open HACS (Home Assistant Community Store).
-2. Navigate to Integrations.
-3. Click on the "![](/images/symbol-1.png)" button to add a new repository.
-4. Click "Custom repositories".
-5. Enter the URL of this GitHub repository.
-6. Select the "Integration" category and click "Add".
+- One shared coordinator per device instead of separate sensor and switch
+  polling loops.
+- Fully asynchronous HTTP through Home Assistant's shared client.
+- A five-second timeout on every device request so an offline meter cannot
+  stall startup or reload.
+- Clean unload behavior with no orphaned background tasks.
+- Polling interval stored in the Home Assistant config entry instead of a JSON
+  file inside `custom_components`.
+- Native options and reconfigure flows for polling interval and IP changes.
+- Missing data returns `unavailable`, never a fabricated zero.
+- Correct HA units and classes, including RSSI in dBm and current-unbalance as
+  a percentage rather than a power factor.
+- Reliable three-phase totals derived when current firmware omits them:
+  current, average current, average line-to-neutral voltage, active/reactive/
+  apparent power, forward energy, and reverse energy.
+- Secured compatibility panel: administrator-only configuration actions,
+  configured devices only, explicit action allowlists, and bounded requests.
+- HACS, hassfest, Ruff, syntax, and unit-test workflows.
 
-### Install manually
+## Supported devices
 
-1. Install this platform by creating a `custom_components` folder in the same folder as your configuration.yaml, if it doesn't already exist.
-2. Create another folder `bituopmd` in the `custom_components` folder. Copy all files from custom_components into the `bituopmd` folder. Do not copy files from master branch, download latest release (.zip).
+The upstream integration documents support for:
 
-## Configuration
+- SPM01-xxEW
+- SPM02-xxEW
+- SDM01-EWx
+- SDM02-EW
 
-After connecting your ESP device to the network following the manual guide, We have three ways to add your ESP devices to HomeAssistant.
+The optimized code is designed around the same local HTTP API and preserves
+relay support for models that advertise it.
 
-### Discoverd
+## Install with HACS
 
-When you add your ESP device to the same network as Home Assistant, the device will be automatically scanned and appear in the discovered list.
+1. Open HACS.
+2. Open the menu and choose **Custom repositories**.
+3. Add `https://github.com/kkangg1/BituoPMD` as category
+   **Integration**.
+4. Download `BituoPMD`.
+5. Restart Home Assistant.
 
-![](/images/discoverd.png)
+To add a new device, go to **Settings → Devices & services → Add
+integration**, search for `BituoPMD`, and enter its fixed IP address. Home
+Assistant native Zeroconf discovery is also supported.
 
-After clicking 'Configure,' the following dialog box will pop up. Then, click 'Submit' to add the device.
+## Replace upstream V1.0.4
 
-![](/images/discoverd-config.png)
+Create a Home Assistant backup first. Then install this repository through
+HACS over the existing `custom_components/bituopmd` directory and restart Home
+Assistant. Existing entries and entity IDs are retained.
 
-### Zeroconf scan
+After restart, verify:
 
-1. Select 'Use Zeroconf to scan device', and click 'Submit'. The integration will start scanning for devices on the current network.
+- every BituoPMD config entry is `Loaded`;
+- metering entities update;
+- existing dashboards and automations resolve their old entity IDs;
+- the system log contains no `bituopmd` errors.
 
-![](/images/zeroconf-1.png)
+The previous V1.0.4 component should be kept as a rollback archive until the
+new version has run successfully.
 
-2. The integration will list the devices it has scanned. Select the device you want to add and proceed with the addition.
+## Polling interval
 
-![](/images/zeroconf-2.png)
+Open the integration entry and choose **Configure**. The supported range is
+5–3600 seconds. The default remains 5 seconds for compatibility. With several
+meters, 10–30 seconds usually reduces LAN and recorder load without affecting
+normal energy dashboards.
 
-### Manual configure
+The legacy service remains available for panel compatibility:
 
-1. Select 'Use IP to pair devices', and click 'Submit'.
+```yaml
+action: bituopmd.set_frequency
+data:
+  device_id: 192.0.2.10
+  frequency: 15
+```
 
-![](/images/manual-1.png)
+`192.0.2.10` is a documentation-only TEST-NET address, not a real device.
 
-2. Enter the device's IP address into the input field. Click the submit button.
+## Privacy and security
 
-![](/images/manual-2.png)
+The integration communicates directly with configured devices on the local
+network. The repository and tests contain no installation-specific IP
+addresses, serial numbers, config-entry IDs, device-registry IDs, or real
+meter readings.
 
-## Devices supported
-- SPM01-xxEW [[More details]](https://shop.bituo-technik.com/products/esp32-wifi-energy-meter-spm01-1p-n-63a)
-- SPM02-xxEW [[More details]](https://shop.bituo-technik.com/products/esp32-wifi-energy-meter-spm02-3p-n-63a-copy)
-- SDM01-EWx  [[More details]](https://shop.bituo-technik.com/products/sdm01-ew0-energy-meter-3p-n-up-to-200a-esp32-wi-fi-ble)
-- SDM02-EW   [[More details]](https://shop.bituo-technik.com/collections/all)
+The sidebar panel can change device Wi-Fi, MQTT, Modbus, and firmware settings.
+It is therefore visible only to Home Assistant administrators. The proxy
+rejects unknown hosts and actions.
 
-## Detail information
+## Development
 
-Click on the device name to enter the details page, where you can view all the parameters measured by the device.
+Run the local checks:
 
-![](/images/interface-1.png)
+```bash
+python -m compileall -q custom_components tests
+python -m unittest discover -s tests
+node --check custom_components/bituopmd/www/bituo_panel.js
+ruff check .
+ruff format --check .
+```
 
-Clicking 'View' will redirect you to the device's embedded webpage.
+GitHub Actions additionally run HACS and hassfest validation.
 
-![](/images/interface-2.jpg)
+## Attribution and licensing
 
-All entities can have their units adjusted according to Home Assistant's rules.
-
-![](/images/interface-3.jpg)
-
-## Device settings
-
-Once the integration is activated, you can see the entry to the settings page in Home Assistant's sidebar.
-
-![](/images/UI-1.jpg)
-
-On this page, you can adjust all the settings of the device, as well as access other functions like Zero Energy, Restart, Erase Factory, and OTA.
-
-![](/images/UI-2.jpg)
-
-Click the dropdown menu at the top to select the device you want to configure.
-
-![](/images/UI-3.png)
-
-## Device OTA
-The device's parameter page will display the OTA status. When 'OTA available' is shown, please proceed to the embedded web page or the integration's settings page to perform the OTA.
-
-![](/images/OTA-2.jpg)
-
-![](/images/OTA-3.jpg)
-
-If 'Up to date' is displayed, it means the device is already on the latest version and no OTA is required.
-
-![](/images/OTA-1.png)
+This repository is a fork of the work by
+[`@Script0803`](https://github.com/script0803). The upstream repository does
+not currently include a license file. No new license is asserted by this
+fork; upstream authorship and applicable rights remain unchanged.

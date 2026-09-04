@@ -1,0 +1,65 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "该设备已配置。",
+      "cannot_connect": "无法连接到设备。",
+      "not_bituotechnik_device": "发现的服务不是 Bituo 电力监测设备。"
+    },
+    "error": {
+      "already_configured": "该设备已配置。",
+      "cannot_connect": "无法连接，请检查 IP 地址和设备在线状态。"
+    },
+    "step": {
+      "user": {
+        "title": "添加 Bituo 电力监测设备",
+        "description": "请输入设备的固定 IP 地址。",
+        "data": {
+          "host_ip": "IP 地址"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "确认发现的 Bituo 设备",
+        "description": "是否添加位于 {host} 的 {name}？"
+      },
+      "reconfigure": {
+        "title": "更新设备地址",
+        "description": "修改地址不会删除现有配置条目。",
+        "data": {
+          "host_ip": "IP 地址"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BituoPMD 选项",
+        "description": "设置 Home Assistant 轮询该设备的频率。",
+        "data": {
+          "scan_interval": "轮询间隔（秒）"
+        }
+      }
+    }
+  },
+  "services": {
+    "set_frequency": {
+      "name": "设置轮询间隔",
+      "description": "修改一个已配置 Bituo 设备的轮询间隔。",
+      "fields": {
+        "device_id": {
+          "name": "设备 IP",
+          "description": "Bituo 设备当前配置的 IP 地址。"
+        },
+        "frequency": {
+          "name": "轮询间隔",
+          "description": "轮询间隔，范围 5-3600 秒。"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "device_not_found": {
+      "message": "未找到 IP 地址为 {host} 的已配置 BituoPMD 设备。"
+    }
+  }
+}

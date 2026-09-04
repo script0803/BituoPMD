@@ -1,150 +1,81 @@
-import logging
-import requests
-from datetime import timedelta
-import asyncio
+"""Button platform for Bituo power monitoring devices."""
+
+from __future__ import annotations
+
 from homeassistant.components.button import ButtonEntity
-from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
-from homeassistant.exceptions import ConfigEntryNotReady
-from .const import DOMAIN, CONF_HOST_IP
+from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-_LOGGER = logging.getLogger(__name__)
+from .api import BituoApiError
+from .const import CONF_HOST_IP, CONF_IDENTITY_HOST, DATA_KEY_ENTRIES, DOMAIN
+from .coordinator import BituoDataUpdateCoordinator
+from .entity import BituoEntity
 
-SCAN_INTERVAL = timedelta(seconds=5)
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up button platform."""
-    host_ip = entry.data[CONF_HOST_IP]
-    try:
-        response = await hass.async_add_executor_job(
-            requests.get, f"http://{host_ip}/data"
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Set up buttons from the shared coordinator."""
+    coordinator: BituoDataUpdateCoordinator = hass.data[DOMAIN][DATA_KEY_ENTRIES][
+        entry.entry_id
+    ]["coordinator"]
+    identity_host = entry.data.get(CONF_IDENTITY_HOST, entry.data[CONF_HOST_IP])
+    async_add_entities(
+        (
+            DataRefreshButton(coordinator, identity_host),
+            DeviceLocatingButton(coordinator, identity_host),
         )
-        data = response.json()
-        device_info = {
-            "model": data.get("productModel") or data.get("ProductModel", "Unknown Model"),
-            "fw_version": data.get("FWVersion") or data.get("fwVersion", "Unknown"),
-            "manufacturer": "BITUO TECHNIK",
-            "mcu_version": data.get("MCUVersion", "Unknown"),
-        }
-    except Exception as e:
-        _LOGGER.error("Failed to fetch device info for %s: %s", host_ip, e)
-        device_info = {
-            "model": "Unknown Model",
-            "fw_version": "Unknown",
-            "manufacturer": "Unknown",
-            "mcu_version": "Unknown",
-        }
+    )
 
-    for _ in range(50):
-        try:
-            sensor_coordinator = hass.data[DOMAIN][entry.entry_id]['sensor_coordinator']
-            break
-        except (KeyError, AttributeError):
-            await asyncio.sleep(0.1)
-    else:
-        _LOGGER.error("sensor_coordinator not found for entry %s after waiting", entry.entry_id)
-        return
 
-    buttons = [
-        DataRefreshButton(sensor_coordinator, host_ip, device_info["model"], device_info["fw_version"], device_info["manufacturer"], device_info["mcu_version"]),
-        DeviceLocatingButton(host_ip, device_info["model"], device_info["fw_version"], device_info["manufacturer"], device_info["mcu_version"])
-    ]
-    
-    async_add_entities(buttons, True)
+class DataRefreshButton(BituoEntity, ButtonEntity):
+    """Request an immediate coordinator refresh."""
 
-class DeviceLocatingButton(ButtonEntity):
-    """Representation of a Button."""
+    _attr_name = "Data Refresh"
+    _attr_icon = "mdi:refresh"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, host_ip, model, fw_version, manufacturer, mcu_version):
-        """Initialize the button."""
-        self._attr_name = "Device Locating"
-        self._attr_unique_id = f"{host_ip}_device_locating"
-        self.entity_id = f"button.{host_ip.replace('.', '_')}_device_locating"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, host_ip)},
-            name=f"{model} - {host_ip}",
-            manufacturer=manufacturer,
-            model=model,
-            sw_version=f"S{fw_version}_M{self.format_version(mcu_version)}",
-            configuration_url=f"http://{host_ip}"  # embed URL
-        )
-        self._host_ip = host_ip
-        self._attr_icon = "mdi:map-marker"
+    def __init__(
+        self,
+        coordinator: BituoDataUpdateCoordinator,
+        identity_host: str,
+    ) -> None:
+        """Initialize the refresh button with its upstream identity."""
+        super().__init__(coordinator, identity_host)
+        self._attr_unique_id = f"{identity_host}_data_refresh"
+        self.entity_id = f"button.{identity_host.replace('.', '_')}_data_refresh"
 
-    async def async_press(self):
-        """Handle the button press."""
-        await self.hass.async_add_executor_job(
-            requests.get, f"http://{self._host_ip}/location"
-        )
-    
-    @staticmethod
-    def format_field_entity_id(field):
-        """Format field name to be more suitable for unique_id."""
-        formatted_name = ''.join(['_' + char.lower() if char.isupper() else char for char in field])
-        return formatted_name.strip('_')
-    
-    @staticmethod
-    def format_version(version):
-        if version.lower() == "unknown":
-            return version 
-        parts = version.split('.')
-        formatted_parts = [] 
-        for part in parts:
-            if part.strip():  # 检查部分是否为空
-                try:
-                    formatted_parts.append(str(int(part)))
-                except ValueError:
-                    formatted_parts.append('unknown')
-            else:
-                formatted_parts.append('unknown')  # 如果部分为空，设置为 'unknown'
-        
-        formatted_version = '.'.join(formatted_parts)
-        return formatted_version
-    
-class DataRefreshButton(CoordinatorEntity, ButtonEntity):
-    """Representation of a Data Refresh Button."""
-
-    def __init__(self, coordinator, host_ip, model, fw_version, manufacturer, mcu_version):
-        """Initialize the button."""
-        super().__init__(coordinator)
-        self._attr_name = "Data Refresh"
-        self._attr_unique_id = f"{host_ip}_data_refresh"
-        self.entity_id = f"button.{host_ip.replace('.', '_')}_data_refresh"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, host_ip)},
-            name=f"{model} - {host_ip}",
-            manufacturer=manufacturer,
-            model=model,
-            sw_version=f"S{fw_version}_M{self.format_version(mcu_version)}",
-            configuration_url=f"http://{host_ip}"  # embed URL
-        )
-        self._host_ip = host_ip
-        self._attr_icon = "mdi:refresh"
-
-    async def async_press(self):
-        """Handle the button press to refresh data."""
+    async def async_press(self) -> None:
+        """Refresh device data."""
         await self.coordinator.async_request_refresh()
 
-    @staticmethod
-    def format_version(version):
-        if version.lower() == "unknown":
-            return version 
-        parts = version.split('.')
-        formatted_parts = [] 
-        for part in parts:
-            if part.strip():  # 检查部分是否为空
-                try:
-                    formatted_parts.append(str(int(part)))
-                except ValueError:
-                    formatted_parts.append('unknown')
-            else:
-                formatted_parts.append('unknown')  # 如果部分为空，设置为 'unknown'
-        
-        formatted_version = '.'.join(formatted_parts)
-        return formatted_version
 
-# by Script0803
+class DeviceLocatingButton(BituoEntity, ButtonEntity):
+    """Ask the physical device to identify itself."""
+
+    _attr_name = "Device Locating"
+    _attr_icon = "mdi:map-marker"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        coordinator: BituoDataUpdateCoordinator,
+        identity_host: str,
+    ) -> None:
+        """Initialize the locating button with its upstream identity."""
+        super().__init__(coordinator, identity_host)
+        self._attr_unique_id = f"{identity_host}_device_locating"
+        self.entity_id = f"button.{identity_host.replace('.', '_')}_device_locating"
+
+    async def async_press(self) -> None:
+        """Run the device locating command."""
+        try:
+            await self.coordinator.client.async_get_action("location")
+        except BituoApiError as err:
+            raise HomeAssistantError(
+                f"Unable to locate BituoPMD device: {err}"
+            ) from err

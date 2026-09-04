@@ -278,6 +278,10 @@ class BituoPanel extends HTMLElement {
         }
     }
 
+    disconnectedCallback() {
+        this.stopRefreshingDevices();
+    }
+
     addEventListeners() {
         const actions = [
             { id: '#zero-energy', action: 'zeroenergy' },
@@ -920,4 +924,6 @@ class BituoPanel extends HTMLElement {
     }
 }
 
-customElements.define('Bituo-panel', BituoPanel);
+if (!customElements.get('bituo-panel')) {
+    customElements.define('bituo-panel', BituoPanel);
+}
