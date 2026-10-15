@@ -57,6 +57,17 @@ After clicking 'Configure,' the following dialog box will pop up. Then, click 'S
 - SPM02-xxEW [[More details]](https://shop.bituo-technik.com/products/esp32-wifi-energy-meter-spm02-3p-n-63a-copy)
 - SDM01-EWx  [[More details]](https://shop.bituo-technik.com/products/sdm01-ew0-energy-meter-3p-n-up-to-200a-esp32-wi-fi-ble)
 - SDM02-EW   [[More details]](https://shop.bituo-technik.com/collections/all)
+- **Bituo Dial**: BLE meters behind a Dial gateway. Pair by the Dial STA IP. Telemetry is MQTT. Dial firmware is unchanged.
+
+## Bituo Dial
+
+EW meters stay on HTTP polling. A Dial gateway publishes `bituo-dial/{DialSN}/meters/{MeterSN}/data`, with active power already in watts. This integration subscribes to that telemetry, skips `/hadata`, locate, and OTA for a Dial entry, and creates one Home Assistant device per BLE meter plus a Dial gateway.
+
+1. The Home Assistant MQTT integration must use the same broker as the Dial.
+2. Add BituoPMD and choose **Use IP to pair devices**. The first pairing reads `http://<Dial-IP>/data` once, so Dial LAN web has to be open and reachable.
+3. After pairing, entities update from MQTT even when Dial port 80 is unreachable.
+4. Reload the integration after meters are added or removed on the Dial.
+5. Do not use Locate, factory erase, or URL-OTA on a Dial entry. Leave the BLE meters on the Dial.
 
 ## Detail information
 

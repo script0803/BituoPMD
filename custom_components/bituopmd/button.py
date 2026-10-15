@@ -10,7 +10,8 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 from homeassistant.exceptions import ConfigEntryNotReady
-from .const import DOMAIN, CONF_HOST_IP
+from .const import DOMAIN, CONF_HOST_IP, CONF_KIND
+from .device_api import KIND_DIAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,25 +20,34 @@ SCAN_INTERVAL = timedelta(seconds=5)
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up button platform."""
     host_ip = entry.data[CONF_HOST_IP]
-    try:
-        response = await hass.async_add_executor_job(
-            requests.get, f"http://{host_ip}/data"
-        )
-        data = response.json()
+    kind = entry.data.get(CONF_KIND)
+    if kind == KIND_DIAL:
         device_info = {
-            "model": data.get("productModel") or data.get("ProductModel", "Unknown Model"),
-            "fw_version": data.get("FWVersion") or data.get("fwVersion", "Unknown"),
-            "manufacturer": "BITUO TECHNIK",
-            "mcu_version": data.get("MCUVersion", "Unknown"),
-        }
-    except Exception as e:
-        _LOGGER.error("Failed to fetch device info for %s: %s", host_ip, e)
-        device_info = {
-            "model": "Unknown Model",
+            "model": "bituo-dial",
             "fw_version": "Unknown",
-            "manufacturer": "Unknown",
+            "manufacturer": "BITUO TECHNIK",
             "mcu_version": "Unknown",
         }
+    else:
+        try:
+            response = await hass.async_add_executor_job(
+                requests.get, f"http://{host_ip}/data"
+            )
+            data = response.json()
+            device_info = {
+                "model": data.get("productModel") or data.get("ProductModel", "Unknown Model"),
+                "fw_version": data.get("FWVersion") or data.get("fwVersion", "Unknown"),
+                "manufacturer": "BITUO TECHNIK",
+                "mcu_version": data.get("MCUVersion", "Unknown"),
+            }
+        except Exception as e:
+            _LOGGER.error("Failed to fetch device info for %s: %s", host_ip, e)
+            device_info = {
+                "model": "Unknown Model",
+                "fw_version": "Unknown",
+                "manufacturer": "Unknown",
+                "mcu_version": "Unknown",
+            }
 
     for _ in range(50):
         try:
@@ -51,8 +61,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     buttons = [
         DataRefreshButton(sensor_coordinator, host_ip, device_info["model"], device_info["fw_version"], device_info["manufacturer"], device_info["mcu_version"]),
-        DeviceLocatingButton(host_ip, device_info["model"], device_info["fw_version"], device_info["manufacturer"], device_info["mcu_version"])
     ]
+    if kind != KIND_DIAL:
+        buttons.append(
+            DeviceLocatingButton(host_ip, device_info["model"], device_info["fw_version"], device_info["manufacturer"], device_info["mcu_version"])
+        )
     
     async_add_entities(buttons, True)
 
@@ -114,9 +127,11 @@ class DataRefreshButton(CoordinatorEntity, ButtonEntity):
         self._attr_name = "Data Refresh"
         self._attr_unique_id = f"{host_ip}_data_refresh"
         self.entity_id = f"button.{host_ip.replace('.', '_')}_data_refresh"
+        ident = f"dial-{host_ip}" if getattr(coordinator, "is_dial", False) else host_ip
+        name = f"Bituo Dial - {host_ip}" if getattr(coordinator, "is_dial", False) else f"{model} - {host_ip}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, host_ip)},
-            name=f"{model} - {host_ip}",
+            identifiers={(DOMAIN, ident)},
+            name=name,
             manufacturer=manufacturer,
             model=model,
             sw_version=f"S{fw_version}_M{self.format_version(mcu_version)}",

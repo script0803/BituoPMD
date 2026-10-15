@@ -19,6 +19,7 @@ try:
 except (ImportError, AttributeError):
     from homeassistant.const import POWER_VOLT_AMPERE_REACTIVE
 
+from homeassistant.core import callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.helpers.update_coordinator import (
@@ -27,7 +28,15 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 from packaging import version
-from .const import DOMAIN, CONF_HOST_IP
+from .const import DOMAIN, CONF_HOST_IP, CONF_KIND, CONF_DIAL_SN, DIAL_SCAN_INTERVAL, EW_SCAN_INTERVAL
+from .device_api import (
+    DIAL_METER_EXCLUDE,
+    KIND_DIAL,
+    DeviceProbeError,
+    probe_device,
+    scale_ew_power_fields,
+    normalize_dial_meter,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,16 +101,36 @@ STATE_CLASSES = {
 
 EXCLUDE_FIELDS = {"Post", "Time", "Config485", "MqttStatus", "ProductModel", "IP", "SerialNumber", "DeviceType", "FWVersion", "MCUVersion", "Manufactor"}
 
+DIAL_SENSOR_FIELDS = (
+    "VoltageX",
+    "VoltageY",
+    "VoltageZ",
+    "CurrentX",
+    "CurrentY",
+    "CurrentZ",
+    "ActivePowerX",
+    "ActivePowerY",
+    "ActivePowerZ",
+    "TotalActivePower",
+    "TotalForwardEnergy",
+    "TotalReverseEnergy",
+    "RSSI",
+)
+
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up sensor platform."""
     host_ip = entry.data[CONF_HOST_IP]
-    current_scan_interval = settings["devices"].get(host_ip, {}).get("scan_interval", 5)
-    coordinator = BituoDataUpdateCoordinator(hass, host_ip, current_scan_interval)
-    # Store the coordinator so it can be accessed by other platforms like button
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {
-        'sensor_coordinator': coordinator
-    }
+    kind = entry.data.get(CONF_KIND)
+    default_interval = DIAL_SCAN_INTERVAL if kind == KIND_DIAL else EW_SCAN_INTERVAL
+    current_scan_interval = settings["devices"].get(host_ip, {}).get(
+        "scan_interval", default_interval
+    )
+    coordinator = BituoDataUpdateCoordinator(hass, entry, current_scan_interval)
+    entry_store = hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
+    entry_store["sensor_coordinator"] = coordinator
+    await coordinator.async_enable_mqtt()
+    if coordinator.is_dial:
+        await asyncio.sleep(1)
     await coordinator.async_config_entry_first_refresh()
 
     # Fetch device model and firmware version
@@ -111,19 +140,68 @@ async def async_setup_entry(hass, entry, async_add_entities):
         _LOGGER.error("Failed to fetch device info for %s", host_ip)
         device_info = {}
 
-    # Create sensor entities for each data field
-    sensors = [
-        BituoSensor(coordinator, host_ip, field, device_info.get("model", "Unknown Model"), device_info.get("fw_version", "Unknown"), device_info.get("manufacturer", "Unknown"), device_info.get("mcu_version", "Unknown"))
-        for field in coordinator.data.keys()
-        if field not in EXCLUDE_FIELDS
-    ]
-    ota_sensor = BituoOTASensor(coordinator, host_ip, device_info.get("model", "Unknown Model"), device_info.get("fw_version", "Unknown"), device_info.get("manufacturer", "Unknown"), device_info.get("mcu_version", "Unknown"))
-    sensors.append(ota_sensor)
+    sensors = []
+    if coordinator.is_dial:
+        hub_id = f"dial-{host_ip}"
+        sensors.append(
+            DialHubSensor(
+                coordinator,
+                host_ip,
+                hub_id,
+                device_info.get("manufacturer", "BITUO TECHNIK"),
+            )
+        )
+        for meter in (coordinator.data.get("meters") or {}).values():
+            sn = meter.get("sn")
+            if not sn:
+                continue
+            label = meter.get("label") or sn
+            fields = list(DIAL_SENSOR_FIELDS)
+            for field in meter.keys():
+                if (
+                    field not in fields
+                    and field not in DIAL_METER_EXCLUDE
+                    and field not in ("sn", "label", "online")
+                ):
+                    fields.append(field)
+            for field in fields:
+                sensors.append(
+                    BituoSensor(
+                        coordinator,
+                        host_ip,
+                        field,
+                        label,
+                        device_info.get("fw_version", "Unknown"),
+                        device_info.get("manufacturer", "Unknown"),
+                        device_info.get("mcu_version", "Unknown"),
+                        sn=sn,
+                        hub_id=hub_id,
+                    )
+                )
+            sensors.append(
+                BituoSensor(
+                    coordinator,
+                    host_ip,
+                    "online",
+                    label,
+                    device_info.get("fw_version", "Unknown"),
+                    device_info.get("manufacturer", "Unknown"),
+                    device_info.get("mcu_version", "Unknown"),
+                    sn=sn,
+                    hub_id=hub_id,
+                )
+            )
+    else:
+        sensors = [
+            BituoSensor(coordinator, host_ip, field, device_info.get("model", "Unknown Model"), device_info.get("fw_version", "Unknown"), device_info.get("manufacturer", "Unknown"), device_info.get("mcu_version", "Unknown"))
+            for field in coordinator.data.keys()
+            if field not in EXCLUDE_FIELDS
+        ]
+        ota_sensor = BituoOTASensor(coordinator, host_ip, device_info.get("model", "Unknown Model"), device_info.get("fw_version", "Unknown"), device_info.get("manufacturer", "Unknown"), device_info.get("mcu_version", "Unknown"))
+        sensors.append(ota_sensor)
+        coordinator.ota_entity = ota_sensor
 
-    # Assign the OTA sensor to the coordinator
-    coordinator.ota_entity = ota_sensor
-
-    async_add_entities(sensors, True)
+    async_add_entities(sensors, False)
 
     async def handle_set_frequency(call):
         """Handle the service call to set the data fetch frequency."""
@@ -145,68 +223,260 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class BituoDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the device."""
 
-    def __init__(self, hass, host_ip, scan_interval):
+    def __init__(self, hass, entry, scan_interval):
         """Initialize."""
-        self.host_ip = host_ip
+        self.entry = entry
+        self.host_ip = entry.data[CONF_HOST_IP]
+        self.kind = entry.data.get(CONF_KIND)
+        self.dial_sn = entry.data.get(CONF_DIAL_SN)
+        unique_id = entry.unique_id or ""
+        if not self.dial_sn and unique_id.startswith("dial-"):
+            self.dial_sn = unique_id[5:]
+        if self.dial_sn:
+            self.kind = KIND_DIAL
         self.ota_versions = load_ota_versions()
-        self.ota_entity = None  # init ota_entity
+        self.ota_entity = None
+        self._mqtt_unsubs = []
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(seconds=scan_interval))
 
         self.hass.loop.create_task(self._periodically_update_scan_interval())
+        if not self.is_dial:
+            self._ota_update_task = hass.loop.create_task(self._schedule_ota_update_checks())
 
-         # Schedule OTA update check every 30 minutes
-        self._ota_update_task = hass.loop.create_task(self._schedule_ota_update_checks())
+    @property
+    def is_dial(self):
+        return self.kind == KIND_DIAL
+
+    def _meters_from_registry(self):
+        """Reuse SNs and labels already created by a previous setup."""
+        from homeassistant.helpers import device_registry as dr
+        from homeassistant.helpers import entity_registry as er
+
+        meters = {}
+        registry = er.async_get(self.hass)
+        devices = dr.async_get(self.hass)
+        for ent in registry.entities.values():
+            if ent.config_entry_id != self.entry.entry_id:
+                continue
+            uid = ent.unique_id or ""
+            sn = uid.split("_", 1)[0]
+            if len(sn) != 12:
+                continue
+            label = sn
+            device = devices.async_get_device({(DOMAIN, sn)})
+            if device:
+                label = device.name_by_user or device.name or sn
+            meters.setdefault(sn, {"sn": sn, "label": label, "online": False})
+        return meters
+
+    def _apply_meter_names(self, meters):
+        from homeassistant.helpers import device_registry as dr
+
+        registry = dr.async_get(self.hass)
+        for sn, meter in meters.items():
+            label = meter.get("label")
+            if not label:
+                continue
+            device = registry.async_get_device({(DOMAIN, sn)})
+            if device is None:
+                continue
+            kwargs = {}
+            if device.name != label:
+                kwargs["name"] = label
+            if device.name_by_user in (None, sn) and label != sn:
+                kwargs["name_by_user"] = label
+            if kwargs:
+                registry.async_update_device(device.id, **kwargs)
+
+    def _merge_meter(self, meter):
+        data = dict(self.data or {})
+        meters = dict(data.get("meters") or {})
+        sn = meter.get("sn")
+        if not sn:
+            return
+        prev = dict(meters.get(sn) or {})
+        prev.update(meter)
+        meters[sn] = prev
+        data["meters"] = meters
+        data["_kind"] = KIND_DIAL
+        if self.dial_sn:
+            data["dial_sn"] = self.dial_sn
+        self.async_set_updated_data(data)
+
+    @callback
+    def _on_mqtt_meter(self, msg):
+        raw = msg.payload
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        meter = normalize_dial_meter(payload)
+        if meter is None:
+            return
+        self._merge_meter(meter)
+
+    @callback
+    def _on_mqtt_mdata(self, msg):
+        raw = msg.payload
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        if payload.get("dial_sn"):
+            self.dial_sn = payload.get("dial_sn") or self.dial_sn
+        data = dict(self.data or {})
+        meters = dict(data.get("meters") or {})
+        changed = False
+        for item in payload.get("meters") or []:
+            if not isinstance(item, dict) or not item.get("sn"):
+                continue
+            sn = item.get("sn")
+            prev = dict(meters.get(sn) or {"sn": sn, "online": False})
+            prev["sn"] = sn
+            prev["label"] = item.get("label") or prev.get("label") or sn
+            meters[sn] = prev
+            changed = True
+        if not changed and not payload.get("dial_sn"):
+            return
+        data["meters"] = meters
+        data["_kind"] = KIND_DIAL
+        if self.dial_sn:
+            data["dial_sn"] = self.dial_sn
+        self.async_set_updated_data(data)
+        self._apply_meter_names(meters)
+
+    @callback
+    def _on_mqtt_summary(self, msg):
+        raw = msg.payload
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        data = dict(self.data or {})
+        meters = dict(data.get("meters") or {})
+        changed = False
+        for item in payload.get("meters") or []:
+            if not isinstance(item, dict) or not item.get("sn"):
+                continue
+            sn = item.get("sn")
+            prev = dict(meters.get(sn) or {"sn": sn})
+            prev["label"] = item.get("label") or prev.get("label") or sn
+            prev["online"] = bool(item.get("online"))
+            if "TotalActivePower" in item:
+                prev["TotalActivePower"] = item.get("TotalActivePower")
+            if item.get("_rssi") is not None:
+                prev["RSSI"] = item.get("_rssi")
+            meters[sn] = prev
+            changed = True
+        if not changed:
+            return
+        data["meters"] = meters
+        data["_kind"] = KIND_DIAL
+        if self.dial_sn:
+            data["dial_sn"] = self.dial_sn
+        self.async_set_updated_data(data)
+
+    async def async_enable_mqtt(self):
+        """Dial publishes outbound MQTT even when inbound HTTP is unreachable."""
+        if not self.is_dial or not self.dial_sn:
+            _LOGGER.warning("Dial MQTT skip: kind=%s sn=%s", self.kind, self.dial_sn)
+            return
+        try:
+            from homeassistant.components import mqtt
+        except Exception as err:
+            _LOGGER.warning("MQTT component missing, Dial stays on last data: %s", err)
+            return
+        try:
+            await mqtt.async_wait_for_mqtt_client(self.hass)
+        except Exception as err:
+            _LOGGER.warning("MQTT client not ready: %s", err)
+            return
+        try:
+            self._mqtt_unsubs.append(
+                await mqtt.async_subscribe(
+                    self.hass,
+                    f"bituo-dial/{self.dial_sn}/meters/+/data",
+                    self._on_mqtt_meter,
+                    0,
+                )
+            )
+            self._mqtt_unsubs.append(
+                await mqtt.async_subscribe(
+                    self.hass,
+                    f"bituo-dial/{self.dial_sn}/mdata",
+                    self._on_mqtt_mdata,
+                    0,
+                )
+            )
+            self._mqtt_unsubs.append(
+                await mqtt.async_subscribe(
+                    self.hass,
+                    f"bituo-dial/{self.dial_sn}/summary",
+                    self._on_mqtt_summary,
+                    0,
+                )
+            )
+            _LOGGER.info("Dial %s subscribed to MQTT telemetry", self.dial_sn)
+        except Exception as err:
+            _LOGGER.warning("Dial MQTT subscribe failed: %s", err)
 
     def get_scan_interval(self):
         """Get the scan interval from settings."""
-        return settings["devices"].get(self.host_ip, {}).get("scan_interval", 5)
+        default = DIAL_SCAN_INTERVAL if self.is_dial else EW_SCAN_INTERVAL
+        return settings["devices"].get(self.host_ip, {}).get("scan_interval", default)
     
     async def _periodically_update_scan_interval(self):
         """Periodically update the scan interval from settings.json."""
         while True:
-            # 读取settings中的最新扫描间隔
             new_interval = self.get_scan_interval()
-            
-            # 检查是否需要更新coordinator的扫描间隔
             if new_interval != self.update_interval.total_seconds():
                 _LOGGER.info(f"Updating scan interval for {self.host_ip} to {new_interval} seconds")
                 self.update_interval = timedelta(seconds=new_interval)
-            
-            # 等待一段时间后再检查
-            await asyncio.sleep(60)  # 每分钟检查一次
-
+            await asyncio.sleep(60)
 
     async def _async_update_data(self):
-        """Fetch data from the device."""
+        """EW meters poll HTTP. Dial is MQTT-only; HTTP /data is often unreachable."""
+        if self.is_dial:
+            if self.data:
+                return self.data
+            return {
+                "_kind": KIND_DIAL,
+                "dial_sn": self.dial_sn,
+                "meters": self._meters_from_registry(),
+            }
         try:
-            response = await self.hass.async_add_executor_job(
-                requests.get, f"http://{self.host_ip}/data"
-            )
-            response.raise_for_status()
-            data = response.json()
-            # _LOGGER.debug(f"{self.host_ip} - {data}")
-            
-            # Multiply power values by 1000
-            for key in data:
-                if 'power' in key.lower() and 'factor' not in key.lower():
-                    try:
-                        data[key] = float(data[key]) * 1000
-                    except ValueError:
-                        _LOGGER.error(f"Non-numeric value found for key {key}: {data[key]}")
-                        data[key] = None
-
-            return data
-        except Exception as err:
-            raise UpdateFailed(f"Error communicating with API: {err}")
+            probed = await self.hass.async_add_executor_job(probe_device, self.host_ip)
+            if probed["kind"] == KIND_DIAL:
+                self.kind = KIND_DIAL
+                self.dial_sn = probed.get("dial_sn") or self.dial_sn
+                meters = {meter["sn"]: meter for meter in probed["meters"]}
+                return {
+                    "_kind": KIND_DIAL,
+                    "dial_sn": self.dial_sn,
+                    "meters": meters,
+                }
+            return scale_ew_power_fields(dict(probed.get("payload") or {}))
+        except (DeviceProbeError, Exception) as err:
+            raise UpdateFailed(f"Error communicating with API: {err}") from err
 
     async def fetch_device_info(self):
         """Fetch device model and firmware version information."""
+        if self.is_dial:
+            return {
+                "model": "bituo-dial",
+                "fw_version": "Unknown",
+                "manufacturer": "BITUO TECHNIK",
+                "mcu_version": "Unknown",
+            }
         try:
-            response = await self.hass.async_add_executor_job(
-                requests.get, f"http://{self.host_ip}/data"
-            )
-            response.raise_for_status()
-            data = response.json()
+            probed = await self.hass.async_add_executor_job(probe_device, self.host_ip)
+            data = probed.get("payload") or {}
             return {
                 "model": data.get("ProductModel", "Unknown Model"),
                 "fw_version": data.get("FWVersion", "Unknown"),
@@ -248,33 +518,77 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
 class BituoSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Sensor."""
 
-    def __init__(self, coordinator, host_ip, field, model, fw_version, manufacturer, mcu_version):
+    def __init__(self, coordinator, host_ip, field, model, fw_version, manufacturer, mcu_version, sn=None, hub_id=None):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._field = field
+        self._sn = sn
         self._attr_name = self.format_field_name(field)
-        self._attr_unique_id = f"{host_ip}_{field}"
-        self.entity_id = f"sensor.{host_ip.replace('.', '_')}_{self.format_field_entity_id(field)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, host_ip)},
-            name=f"{model} - {host_ip}",
-            manufacturer=manufacturer,
-            model=model,
-            sw_version=f"S{fw_version}_M{self.format_version(mcu_version)}",
-            configuration_url=f"http://{host_ip}"  # embed URL
-        )
+        if sn:
+            self._attr_unique_id = f"{sn}_{field}"
+            self.entity_id = f"sensor.{sn.lower()}_{self.format_field_entity_id(field)}"
+            identifiers = {(DOMAIN, sn)}
+            via_device = (DOMAIN, hub_id) if hub_id else None
+            device_kwargs = {
+                "identifiers": identifiers,
+                "name": model,
+                "manufacturer": manufacturer,
+                "model": model,
+                "sw_version": f"S{fw_version}_M{self.format_version(mcu_version)}",
+                "configuration_url": f"http://{host_ip}",
+            }
+            if via_device:
+                device_kwargs["via_device"] = via_device
+            self._attr_device_info = DeviceInfo(**device_kwargs)
+        else:
+            self._attr_unique_id = f"{host_ip}_{field}"
+            self.entity_id = f"sensor.{host_ip.replace('.', '_')}_{self.format_field_entity_id(field)}"
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, host_ip)},
+                name=f"{model} - {host_ip}",
+                manufacturer=manufacturer,
+                model=model,
+                sw_version=f"S{fw_version}_M{self.format_version(mcu_version)}",
+                configuration_url=f"http://{host_ip}"  # embed URL
+            )
         self._host_ip = host_ip
+        self._hub_id = hub_id
+        self._manufacturer = manufacturer
+        self._fw_version = fw_version
+        self._mcu_version = mcu_version
         self._native_unit_of_measurement = self.get_initial_unit_of_measurement()
         self._attr_state_class = self.get_state_class()
         self._attr_device_class = self.get_device_class()
-
-        # Set default precision for power data
         if "power" in self._field.lower() and "active" in self._field.lower():
             self._attr_suggested_display_precision = 0
         if "power" in self._field.lower() and "apparent" in self._field.lower():
             self._attr_suggested_display_precision = 0
         if "unbalancelinecurrents" in self._field.lower():
             self._attr_suggested_display_precision = 0
+
+    def _meter_label(self):
+        if not self._sn:
+            return None
+        meter = ((self.coordinator.data or {}).get("meters") or {}).get(self._sn) or {}
+        return meter.get("label") or self._sn
+
+    @property
+    def device_info(self):
+        if not self._sn:
+            return self._attr_device_info
+        label = self._meter_label()
+        via_device = (DOMAIN, self._hub_id) if self._hub_id else None
+        info = {
+            "identifiers": {(DOMAIN, self._sn)},
+            "name": label,
+            "manufacturer": self._manufacturer,
+            "model": label,
+            "sw_version": f"S{self._fw_version}_M{self.format_version(self._mcu_version)}",
+            "configuration_url": f"http://{self._host_ip}",
+        }
+        if via_device:
+            info["via_device"] = via_device
+        return DeviceInfo(**info)
 
     def get_initial_unit_of_measurement(self):
         """Determine the initial unit of measurement based on the field."""
@@ -354,9 +668,13 @@ class BituoSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the native state of the sensor."""
-        value = self.coordinator.data.get(self._field)
+        data = self.coordinator.data or {}
+        if self._sn:
+            value = (data.get("meters") or {}).get(self._sn, {}).get(self._field)
+        else:
+            value = data.get(self._field)
         if value is None:
-            return 0  # 或其它合适的默认值
+            return 0
         return value
 
     @property
@@ -368,6 +686,31 @@ class BituoSensor(CoordinatorEntity, SensorEntity):
     def device_class(self):
         """Return the class of this device."""
         return self._attr_device_class
+
+class DialHubSensor(CoordinatorEntity, SensorEntity):
+    """Gateway sensor: how many BLE meters behind this Dial are online."""
+
+    def __init__(self, coordinator, host_ip, hub_id, manufacturer):
+        super().__init__(coordinator)
+        self._host_ip = host_ip
+        self._attr_name = "Online meters"
+        self._attr_unique_id = f"{hub_id}_online_count"
+        self.entity_id = f"sensor.{hub_id.replace('.', '_')}_online_count"
+        self._attr_icon = "mdi:counter"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, hub_id)},
+            name=f"Bituo Dial - {host_ip}",
+            manufacturer=manufacturer,
+            model="bituo-dial",
+            configuration_url=f"http://{host_ip}",
+        )
+
+    @property
+    def native_value(self):
+        meters = (self.coordinator.data or {}).get("meters") or {}
+        return sum(1 for meter in meters.values() if meter.get("online"))
+
 
 class BituoOTASensor(CoordinatorEntity, SensorEntity):
     """Representation of an OTA status sensor."""

@@ -1,15 +1,34 @@
 import logging
-import requests
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
-from .const import DOMAIN, CONF_HOST_IP
+from .const import DOMAIN, CONF_HOST_IP, CONF_KIND, CONF_DIAL_SN
+from .device_api import KIND_DIAL, DeviceProbeError, probe_device
 from .frontend import setup_frontend
-
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.BUTTON, Platform.SWITCH]
+
+
+def _platforms_for_kind(kind):
+    if kind == KIND_DIAL:
+        return [Platform.SENSOR, Platform.BUTTON]
+    return list(PLATFORMS)
+
+def _dial_sn_from_entry(entry: ConfigEntry):
+    sn = entry.data.get(CONF_DIAL_SN)
+    if sn:
+        return sn
+    unique_id = entry.unique_id or ""
+    if unique_id.startswith("dial-"):
+        return unique_id[5:]
+    title = entry.title or ""
+    prefix = "Bituo Dial "
+    if title.startswith(prefix):
+        return title[len(prefix):].strip()
+    return None
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up BituoPMD integration from a config entry."""
@@ -18,35 +37,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     host_ip = entry.data[CONF_HOST_IP]
     _LOGGER.info("Setting up BituoPMD integration for %s", host_ip)
-    
-    # Initialize the data dictionary for this entry
-    hass.data[DOMAIN][entry.entry_id] = {}
 
-    # Fetch device data to get model id and verify connection
+    kind = entry.data.get(CONF_KIND)
+    dial_sn = _dial_sn_from_entry(entry)
+    if kind == KIND_DIAL or dial_sn:
+        if not dial_sn:
+            dial_sn = "DIAL"
+        new_data = dict(entry.data)
+        if new_data.get(CONF_KIND) != KIND_DIAL or new_data.get(CONF_DIAL_SN) != dial_sn:
+            new_data[CONF_KIND] = KIND_DIAL
+            new_data[CONF_DIAL_SN] = dial_sn
+            hass.config_entries.async_update_entry(entry, data=new_data)
+        _LOGGER.info("Dial %s: skip HTTP probe, use MQTT", dial_sn)
+        platforms = _platforms_for_kind(KIND_DIAL)
+        hass.data[DOMAIN][entry.entry_id] = {"platforms": platforms}
+        await hass.config_entries.async_forward_entry_setups(entry, platforms)
+        await setup_frontend(hass)
+        return True
+
     try:
-        response = await hass.async_add_executor_job(
-            requests.get, f"http://{host_ip}/data"
-        )
-        response.raise_for_status()  # Check for HTTP errors
-        data = response.json()
-        model_id = data.get("ProductModel") or data.get("productModel", "Unknown Model")
-    except requests.exceptions.RequestException as e:
+        probed = await hass.async_add_executor_job(probe_device, host_ip)
+    except DeviceProbeError as e:
         _LOGGER.error("Error fetching device data from %s: %s", host_ip, e)
         raise ConfigEntryNotReady from e
 
-    # Update the entry title to be "modelid - ip"
+    new_data = dict(entry.data)
+    new_data[CONF_KIND] = probed["kind"]
+    if probed["kind"] == KIND_DIAL:
+        new_data[CONF_DIAL_SN] = probed["dial_sn"]
     hass.config_entries.async_update_entry(
-        entry, title=f"{model_id} - {host_ip}"
+        entry, data=new_data, title=probed["title"]
     )
 
-    # Forward the setup to the sensor platforms
+    platforms = _platforms_for_kind(probed["kind"])
+    hass.data[DOMAIN][entry.entry_id] = {"platforms": platforms}
+
     try:
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        await hass.config_entries.async_forward_entry_setups(entry, platforms)
     except ConfigEntryNotReady as e:
         _LOGGER.error("Error setting up platforms for BituoPMD: %s", e)
         raise ConfigEntryNotReady from e
 
-    # Set up the frontend
     await setup_frontend(hass)
 
     return True
@@ -55,7 +86,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a BituoPMD config entry."""
     _LOGGER.info("Unloading BituoPMD integration for %s", entry.data[CONF_HOST_IP])
 
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    platforms = (
+        hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("platforms")
+        or _platforms_for_kind(entry.data.get(CONF_KIND))
+    )
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms)
     if unload_ok:
         _LOGGER.info("Successfully unloaded BituoPMD integration for %s", entry.data[CONF_HOST_IP])
         if DOMAIN in hass.data:

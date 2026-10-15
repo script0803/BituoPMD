@@ -8,7 +8,8 @@ from homeassistant.components.zeroconf import async_get_instance
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import voluptuous as vol
 from zeroconf import ServiceBrowser, ServiceStateChange
-from .const import DOMAIN, CONF_HOST_IP
+from .const import DOMAIN, CONF_HOST_IP, CONF_KIND, CONF_DIAL_SN
+from .device_api import KIND_DIAL, DeviceProbeError, probe_device
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -170,16 +171,10 @@ class BituoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 # if correct
                 ip_address = user_input.get(CONF_HOST_IP)
                 try:
-                    response = await self.hass.async_add_executor_job(
-                        requests.get, f"http://{ip_address}/data"
+                    probed = await self.hass.async_add_executor_job(
+                        probe_device, ip_address
                     )
-                    response.raise_for_status()
-                    data = response.json()
-
-                    # check json
-                    if not data:
-                        raise requests.exceptions.RequestException("No data returned")
-                except requests.exceptions.RequestException:
+                except DeviceProbeError:
                     errors["base"] = "device_not_found"
                     return self.async_show_form(
                         step_id="manual",
@@ -187,7 +182,12 @@ class BituoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                         errors=errors,
                     )
 
-                entry = self.async_create_entry(title=f"Manual IP Configuration - {user_input[CONF_HOST_IP]}", data=user_input)
+                entry_data = {CONF_HOST_IP: ip_address, CONF_KIND: probed["kind"]}
+                if probed["kind"] == KIND_DIAL:
+                    entry_data[CONF_DIAL_SN] = probed["dial_sn"]
+                    await self.async_set_unique_id(f"dial-{probed['dial_sn']}")
+                    self._abort_if_unique_id_configured()
+                entry = self.async_create_entry(title=probed["title"], data=entry_data)
             
                 # remove device discovered
                 self.devices = [device for device in self.devices if device["ip"] != ip_address]

@@ -9,7 +9,8 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 from homeassistant.exceptions import ConfigEntryNotReady
-from .const import DOMAIN, CONF_HOST_IP
+from .const import DOMAIN, CONF_HOST_IP, CONF_KIND
+from .device_api import KIND_DIAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,6 +18,8 @@ SCAN_INTERVAL = timedelta(seconds=2)
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up switch platform."""
+    if entry.data.get(CONF_KIND) == KIND_DIAL:
+        return
     host_ip = entry.data[CONF_HOST_IP]
     coordinator = BituoDataUpdateCoordinator(hass, host_ip)
     try:
@@ -49,7 +52,6 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Fetch data from the device."""
         try:
-            # Fetch data from /hadata
             response = await self.hass.async_add_executor_job(
                 requests.get, f"http://{self.host_ip}/hadata"
             )
@@ -64,8 +66,8 @@ class BituoDataUpdateCoordinator(DataUpdateCoordinator):
                 data["switchstatus"] = status
 
             return data
-        except Exception as err:
-            raise UpdateFailed(f"Error communicating with API: {err}")
+        except Exception:
+            return {}
 
     async def fetch_device_info(self):
         """Fetch device model and firmware version information."""

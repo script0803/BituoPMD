@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BituoPMD",
+        "description": "扫描 EW 电表，或手动填写 EW 电表 / 圆屏 Dial 的 IP。",
+        "data": {
+          "method": "添加方式"
+        }
+      },
+      "manual": {
+        "title": "设备 IP",
+        "description": "填 EW 电表 IP，或 Dial 的 STA IP（圆屏需先打开局域网网页）。",
+        "data": {
+          "host_ip": "IP 地址"
+        }
+      }
+    },
+    "error": {
+      "device_not_found": "这里没有 EW 电表或 Dial 的 HTTP。若是 Dial，请先在圆屏 Setup 打开局域网网页。",
+      "device_already_configured": "该 IP 已添加",
+      "no_devices_found": "没有发现设备",
+      "no_new_devices_found": "没有新设备"
+    }
+  }
+}

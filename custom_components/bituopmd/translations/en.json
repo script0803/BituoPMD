@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BituoPMD",
+        "description": "Scan for EW meters, or enter the IP of an EW meter / Bituo Dial.",
+        "data": {
+          "method": "How to add the device"
+        }
+      },
+      "manual": {
+        "title": "Device IP",
+        "description": "EW meter STA IP, or Dial STA IP (LAN web must be on).",
+        "data": {
+          "host_ip": "IP address"
+        }
+      }
+    },
+    "error": {
+      "device_not_found": "No Bituo EW meter or Dial HTTP here. For Dial, turn on LAN web in Setup first.",
+      "device_already_configured": "This IP is already configured",
+      "no_devices_found": "No devices found",
+      "no_new_devices_found": "No new devices found"
+    }
+  }
+}
